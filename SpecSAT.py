@@ -1,19 +1,20 @@
 #!/usr/bin/python3
 
 import argparse
+import contextlib
 import json
 import logging
 import os
 import platform
 import psutil
+import requests  # downloading
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
-import urllib.request  # downloading
 
-from io import BytesIO  # extracting zip without storing a file
-from zipfile import ZipFile  # extracting a zip
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -47,6 +48,17 @@ def run_silently(call, **kwargs):
         print("STDOUT: ", process.stdout.decode("utf_8"))
         print("STDERR: ", process.stderr.decode("utf_8"))
         raise Exception("Failed execution of %r %r", call, kwargs)
+
+
+@contextlib.contextmanager
+def pushd(new_dir):
+    """Similar to shell's pushd, popd is implicit"""
+    previous_dir = os.getcwd()
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(previous_dir)
 
 
 def get_host_info():
@@ -87,9 +99,9 @@ def measure_call(call, output_file):
 
 class CNFgenerator(object):
 
-    NAME = "cnfuzz"
-    URL = "http://fmv.jku.at/cnfuzzdd/cnfuzzdd2013.zip"
-    VERSION = "cnfuzzdd2013"
+    NAME = "modgen"
+    URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
+    VERSION = "modularityGen_v2.1"
 
     def __init__(self):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -97,7 +109,8 @@ class CNFgenerator(object):
         self.solver = None
         self.workdir = tempfile.TemporaryDirectory(
             prefix="specsat_solver", dir=os.getcwd())
-        self.sourcefile = os.path.join(self.workdir.name, "cnfuzz.c")
+        self.sourcefile = os.path.join(
+            self.workdir.name, "modularityGen_v2.1.cpp")
         self.generator = os.path.join(self.workdir.name, self.NAME)
         self.log.debug("Get generator with workdir '%s'", self.workdir.name)
         self._get_generator()
@@ -105,28 +118,36 @@ class CNFgenerator(object):
         self._build_generator()
 
     def _get_generator(self):
-        url = urllib.request.urlopen(self.URL)
         self.log.debug("Downloading '%s' from '%s'", self.NAME, self.URL)
-        with ZipFile(BytesIO(url.read())) as my_zip_file:
-            print(my_zip_file.__dict__)
-            relevant_file = "cnfuzzdd2013/cnfuzz.c"
-            self.log.debug("Writing source file to '%s'", self.sourcefile)
-            with open((self.sourcefile), "wb") as output:
-                for line in my_zip_file.open(relevant_file).readlines():
-                    output.write(line)
+        with pushd(self.workdir.name):
+            targz_file_name = "modularityGen_v2.1.tar.gz"
+
+            # download
+            response = requests.get(self.URL, stream=True)
+            with open(targz_file_name, 'wb') as out_file:
+                shutil.copyfileobj(response.raw, out_file)
+            del response
+
+            # extract
+            tar = tarfile.open(targz_file_name, mode="r:gz")
+            tar.extractall()
+            tar.close()
+            print(os.getcwd())
+            print(os.listdir())
 
     def _build_generator(self):
-        build_call = ["gcc", "-O2", self.sourcefile,
+        build_call = ["g++", "-O2", self.sourcefile,
                       "-o", self.generator]  # "-Wall"
         # TODO: forward output to log file, only display on non-zero staus
         self.log.debug("Building solver with %r", build_call)
         run_silently(build_call)
-        # subprocess.call(build_call)
 
-    def generate(self, formula, output_file):
-        self.log.debug("Generate formula %d in file '%s' with generator '%s'",
-                       formula, output_file, self.generator)
-        generate_call = [self.generator, str(formula)]
+    def generate(self, output_file, parameter=None):
+        self.log.debug("Generate formula in file '%s' with parameters %r",
+                       output_file, parameter)
+        generate_call = [self.generator]
+        if parameter is not None:
+            generate_call += parameter
         with open(output_file, "w") as outfile:
             self.log.debug("Calling generator '%r' with stdout='%s'",
                            generate_call, output_file)
@@ -135,7 +156,7 @@ class CNFgenerator(object):
     def get_name(self):
         return self.NAME
 
-    def version(self):
+    def get_version(self):
         return VERSION
 
 
@@ -212,11 +233,12 @@ class SATsolver(object):
 class Benchmarker(object):
     BASE_WORK_DIR = "/dev/shm"  # For now, support Linux
 
-    def __init__(self, solver, **kwargs):
+    def __init__(self, solver, generator, **kwargs):
         self.log = logging.getLogger(self.__class__.__name__)
         self.__dict__.update(kwargs)
         self.log.debug("Get SAT Solver")
         self.solver = solver
+        self.generator = generator
         self.fail_early = False  # TODO: make this a parameter that is updated in the line above
 
     def run(self):
@@ -230,10 +252,10 @@ class Benchmarker(object):
         report["failed_runs"] = 0
 
         self.log.debug("Get CNF Generator")
-        generator = CNFgenerator()
+
         report["generator"] = {
-            "name": generator.get_name(),
-            "version": generator.version()
+            "name": self.generator.get_name(),
+            "version": self.generator.get_version()
         }
 
         report["satsolver"] = {
@@ -252,22 +274,22 @@ class Benchmarker(object):
             relevant_cores.append({"cores": psutil.cpu_count(
                 logical=False), "name": "logical_cores"})
 
-            # example round
         formula_path = os.path.join(self.BASE_WORK_DIR, "input.cnf")
         output_path = os.path.join(self.BASE_WORK_DIR, "output.log")
-        # TODO create meaningful list of benchmarks, add expected status code, conflicts and decisions, to check determinism
+
+        # TODO add unsat formulas to the list
         benchmarks = [{
-            "seed": 1,
-            "base_cpu_time": 0.011,
+            "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
+            "base_cpu_time": 25,
             "expected_status": 10
         }, {
-            "seed": 2,
-            "base_cpu_time": 0.01,
+            "parameter": ["-s", "10000000", "-n", "100000", "-m", "340000"],
+            "base_cpu_time": 240,
             "expected_status": 10
         }, {
-            "seed": 3,
-            "base_cpu_time": 0.01,
-            "expected_status": 20
+            "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
+            "base_cpu_time": 35,
+            "expected_status": 10
         }
         ]
 
@@ -286,7 +308,7 @@ class Benchmarker(object):
                 self.log.warning("Stopping execution due to detected error")
                 break
 
-            generator.generate(benchmark["seed"], formula_path)
+            self.generator.generate(formula_path, benchmark["parameter"])
             for core_data in relevant_cores:
                 if detected_failure and self.fail_early:
                     break
@@ -299,11 +321,11 @@ class Benchmarker(object):
                     solve_result = measure_call(solve_call, output_file)
                 solve_result["cores"] = core_data
                 solve_result["call"] = solve_call
-                log.debug("Solved formula '%s' with '%r'",
-                          benchmark["seed"], solve_result)
+                log.debug("Solved formula %r with '%r'",
+                          benchmark["parameter"], solve_result)
                 if solve_result["status_code"] != benchmark["expected_status"]:
-                    self.log.error("failed formula '%d' with unmatching status code '%d' instead of expected '%d'",
-                                   benchmark["seed"], solve_result["status_code"], benchmark["expected_status"])
+                    self.log.error("failed formula %r with unmatching status code '%d' instead of expected '%d'",
+                                   benchmark["parameter"], solve_result["status_code"], benchmark["expected_status"])
                     detected_failure = True
                     okay_run = False
                     report["failed_runs"] += 1
@@ -353,6 +375,11 @@ def main():
         print("Version: {}".format(VERSION))
         return 0
 
+    log.info("Building CNF generator")
+    generator = CNFgenerator()
+    log.debug("Build generator '%s' with version '%s'",
+              generator.get_name(), generator.get_version())
+
     log.debug("Pre-SAT args: %r", args)
     log.info("Building SAT solver")
     sat_args = ["sat_compiler", "sat_compile_flags"]
@@ -363,7 +390,7 @@ def main():
             args.pop(sat_arg)
 
     log.debug("Starting benchmarking with args: %r", args)
-    benchmarker = Benchmarker(solver=satsolver, *args)
+    benchmarker = Benchmarker(solver=satsolver, generator=generator, *args)
     return benchmarker.run()
 
 
