@@ -146,7 +146,7 @@ class SATsolver(object):
     COMMIT = "306d2e8ef9733291acd6a07716c6158546a1c8d5"
     SOLVER_PARAMETER = ["-no-diversify"]
 
-    def __init__(self):
+    def __init__(self, compiler=None, compile_flags=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
         self.solver = None
@@ -159,7 +159,7 @@ class SATsolver(object):
         self._get_solver(self.solverdir)
         self.log.info("Retrieved solver '%s' with version '%s'",
                       self.NAME, self._get_version())
-        self._build_solver()
+        self._build_solver(compiler=compiler, compile_flags=compile_flags)
         assert self.solver != None
         assert self.build_command != None
 
@@ -168,9 +168,14 @@ class SATsolver(object):
         self.log.debug("Cloning solver with: %r", clone_call)
         run_silently(clone_call)
 
-    def _build_solver(self):
+    def _build_solver(self, compiler=None, compile_flags=None):
         self.build_command = ["make", "BUILD_TYPE=parallel",
                               "r", "-j", str(psutil.cpu_count())]
+        if compiler is not None:
+            self.build_command.append(f"CXX={compiler}")
+        if compile_flags is not None:
+            self.build_command.append(f"CXX_EXTRA_FLAGS={compile_flags}")
+            self.build_command.append(f"LD_EXTRA_FLAGS={compile_flags}")
         self.log.debug("Building solver with: %r in cwd: '%s'",
                        self.build_command, self.solverdir)
         # TODO: forward output to log file, only display on non-zero staus
@@ -207,9 +212,11 @@ class SATsolver(object):
 class Benchmarker(object):
     BASE_WORK_DIR = "/dev/shm"  # For now, support Linux
 
-    def __init__(self, **kwargs):
+    def __init__(self, solver, **kwargs):
         self.log = logging.getLogger(self.__class__.__name__)
         self.__dict__.update(kwargs)
+        self.log.debug("Get SAT Solver")
+        self.solver = solver
         self.fail_early = False  # TODO: make this a parameter that is updated in the line above
 
     def run(self):
@@ -229,12 +236,10 @@ class Benchmarker(object):
             "version": generator.version()
         }
 
-        self.log.debug("Get SAT Solver")
-        solver = SATsolver()
         report["satsolver"] = {
-            "name": solver.get_name(),
-            "version": solver.get_version(),
-            "build_command": solver.get_build_command()
+            "name": self.solver.get_name(),
+            "version": self.solver.get_version(),
+            "build_command": self.solver.get_build_command()
         }
 
         report["hostinfo"] = get_host_info()
@@ -287,7 +292,7 @@ class Benchmarker(object):
                     break
                 okay_run = True
                 cores = core_data["cores"]
-                solve_call = solver.solve_call(formula_path, cores)
+                solve_call = self.solver.solve_call(formula_path, cores)
                 print(solve_call)
                 # TODO: use actually useful call
                 with open(output_path, "w") as output_file:
@@ -325,6 +330,11 @@ def parse_args():
     parser.add_argument('-v', '--version', default=False,
                         action='store_true', help='Print version of the tool')
 
+    parser.add_argument('--sat-compiler', default=None,
+                        help='Use this compiler as CXX')
+    parser.add_argument('--sat-compile-flags', default=None,
+                        help='Add this string to CXXFLAGS and LDFLAGS')
+
     args = parser.parse_args()
     return vars(args)
 
@@ -343,8 +353,17 @@ def main():
         print("Version: {}".format(VERSION))
         return 0
 
+    log.debug("Pre-SAT args: %r", args)
+    log.info("Building SAT solver")
+    sat_args = ["sat_compiler", "sat_compile_flags"]
+    satsolver = SATsolver(compiler=args.get("sat_compiler"),
+                          compile_flags=args.get("sat_compile_flags"))
+    for sat_arg in sat_args:
+        if sat_arg in args:
+            args.pop(sat_arg)
+
     log.debug("Starting benchmarking with args: %r", args)
-    benchmarker = Benchmarker(*args)
+    benchmarker = Benchmarker(solver=satsolver, *args)
     return benchmarker.run()
 
 
