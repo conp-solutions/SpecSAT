@@ -346,8 +346,8 @@ def main():
         logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
                             datefmt='%Y-%m-%d:%H:%M:%S', level=logging.DEBUG)
     else:
-        logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-                            datefmt='%Y-%m-%d:%H:%M:%S', level=logging.WARNING)
+        logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s %(message)s',
+                            datefmt='%Y-%m-%d:%H:%M:%S', level=logging.INFO)
 
     if args.pop("version"):
         print("Version: {}".format(VERSION))
