@@ -162,7 +162,7 @@ class SATsolver(object):
     COMMIT = "306d2e8ef9733291acd6a07716c6158546a1c8d5"
     SOLVER_PARAMETER = ["-no-diversify"]
 
-    def __init__(self, compiler=None, compile_flags=None):
+    def __init__(self, compiler=None, compile_flags=None, commit=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
         self.solver = None
@@ -172,17 +172,23 @@ class SATsolver(object):
         self.solverdir = os.path.join(self.workdir.name, self.NAME)
         self.log.debug("Run solver with workdir '%s'", self.workdir.name)
 
-        self._get_solver(self.solverdir)
+        self._get_solver(self.solverdir, commit=commit)
         self.log.info("Retrieved solver '%s' with version '%s'",
                       self.NAME, self._get_version())
         self._build_solver(compiler=compiler, compile_flags=compile_flags)
         assert self.solver != None
         assert self.build_command != None
 
-    def _get_solver(self, directory):
+    def _get_solver(self, directory, commit=None):
+        self.log.debug("get solver: %r", locals())
         clone_call = ["git", "clone", self.REPO, directory]
         self.log.debug("Cloning solver with: %r", clone_call)
         run_silently(clone_call)
+        if commit:
+            checkout_call = ["git", "reset", "--hard", commit]
+            self.log.debug("Select SAT commit %r", checkout_call)
+            with pushd(directory):
+                run_silently(checkout_call)
 
     def _build_solver(self, compiler=None, compile_flags=None):
         self.build_command = ["make", "BUILD_TYPE=parallel",
@@ -357,6 +363,8 @@ def parse_args():
     parser.add_argument('--generator-cxx', default="g++",
                         help='Use this compiler as CXX to compile the generator')
 
+    parser.add_argument('--sat-commit', default="0593ff1",
+                        help='Use this commit of the SAT solver')
     parser.add_argument('--sat-compiler', default=None,
                         help='Use this compiler as CXX')
     parser.add_argument('--sat-compile-flags', default=None,
@@ -405,9 +413,10 @@ def main():
 
     log.debug("Pre-SAT args: %r", args)
     log.info("Building SAT solver")
-    sat_args = ["sat_compiler", "sat_compile_flags"]
+    sat_args = ["sat_compiler", "sat_compile_flags", "sat_commit"]
     satsolver = SATsolver(compiler=args.get("sat_compiler"),
-                          compile_flags=args.get("sat_compile_flags"))
+                          compile_flags=args.get("sat_compile_flags"),
+                          commit=args.get("sat_commit"))
     for sat_arg in sat_args:
         if sat_arg in args:
             args.pop(sat_arg)
