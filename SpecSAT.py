@@ -103,7 +103,7 @@ class CNFgenerator(object):
     URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
     VERSION = "modularityGen_v2.1"
 
-    def __init__(self):
+    def __init__(self, cxx = "g++"):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info('creating an instance of Auxiliary')
         self.solver = None
@@ -115,7 +115,7 @@ class CNFgenerator(object):
         self.log.debug("Get generator with workdir '%s'", self.workdir.name)
         self._get_generator()
         self.log.debug("Build generator with workdir '%s'", self.workdir.name)
-        self._build_generator()
+        self._build_generator(cxx=cxx)
 
     def _get_generator(self):
         self.log.debug("Downloading '%s' from '%s'", self.NAME, self.URL)
@@ -135,8 +135,8 @@ class CNFgenerator(object):
             print(os.getcwd())
             print(os.listdir())
 
-    def _build_generator(self):
-        build_call = ["g++", "-O2", self.sourcefile,
+    def _build_generator(self, cxx="g++"):
+        build_call = [cxx, "-O2", self.sourcefile,
                       "-o", self.generator]  # "-Wall"
         # TODO: forward output to log file, only display on non-zero staus
         self.log.debug("Building solver with %r", build_call)
@@ -352,6 +352,9 @@ def parse_args():
     parser.add_argument('-v', '--version', default=False,
                         action='store_true', help='Print version of the tool')
 
+    parser.add_argument('--generator-cxx', default="g++",
+                        help='Use this compiler as CXX to compile the generator')
+
     parser.add_argument('--sat-compiler', default=None,
                         help='Use this compiler as CXX')
     parser.add_argument('--sat-compile-flags', default=None,
@@ -376,9 +379,10 @@ def main():
         return 0
 
     log.info("Building CNF generator")
-    generator = CNFgenerator()
+    generator = CNFgenerator(cxx=args.get("generator_cxx"))
     log.debug("Build generator '%s' with version '%s'",
               generator.get_name(), generator.get_version())
+    args.pop("generator_cxx")
 
     log.debug("Pre-SAT args: %r", args)
     log.info("Building SAT solver")
