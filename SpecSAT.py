@@ -260,18 +260,21 @@ class Benchmarker(object):
         return report
     
     def _get_benchmarks(self):
-        # TODO add unsat formulas to the list
         benchmarks = [{
             "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
-            "base_cpu_time": 25,
+            "bas_sequential_cpu_time": 25,
             "expected_status": 10
         }, {
+            "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
+            "bas_sequential_cpu_time": 20,
+            "expected_status": 20
+        }, {
             "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
-            "base_cpu_time": 25,
+            "bas_sequential_cpu_time": 25,
             "expected_status": 10
         }, {
             "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
-            "base_cpu_time": 35,
+            "bas_sequential_cpu_time": 35,
             "expected_status": 10
         }
         ]
