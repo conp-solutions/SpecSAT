@@ -259,7 +259,7 @@ class Benchmarker(object):
         report["hostinfo"] = get_host_info()
         return report
 
-    def _get_benchmarks(self):
+    def _get_benchmarks(self, only_one=False):
         benchmarks = [{
             "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
             "bas_sequential_cpu_time": 25,
@@ -278,7 +278,7 @@ class Benchmarker(object):
             "expected_status": 10
         }
         ]
-        return benchmarks
+        return benchmarks if not only_one else [benchmarks[0]]
 
     def _detect_cores(self):
         relevant_cores = [{"cores": 1, "name": "single"}]
@@ -290,13 +290,13 @@ class Benchmarker(object):
         self.log.info("Detected cores: %r", relevant_cores)
         return relevant_cores
 
-    def run(self, verbosity=0):
+    def run(self, lite=False, verbosity=0):
         old_cwd = os.getcwd()
         self.log.debug(
             "Starting Benchmarking Run in cwd '%s', changing to '%s'", old_cwd, self.BASE_WORK_DIR)
 
         with pushd(self.BASE_WORK_DIR):
-            benchmarks = self._get_benchmarks()
+            benchmarks = self._get_benchmarks(only_one=lite)
             relevant_cores = self._detect_cores()
             report = self._prepare_report()
 
@@ -355,6 +355,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run SpecSAT')
     parser.add_argument('-d', '--debug', default=False,
                         action='store_true', help='Log debug output')
+    parser.add_argument('-l', '--lite', default=False,
+                        action='store_true', help='Only run a single, easy, benchmark to test the setup')
     parser.add_argument('-n', '--nick-name', default=None,
                         help='Add this name as nick-name to the report.')
     parser.add_argument('-o', '--output', default=None,
@@ -431,7 +433,8 @@ def main():
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
-    report = benchmarker.run(verbosity=args.get("verbosity"))
+    report = benchmarker.run(lite=args.get(
+        "lite", False), verbosity=args.get("verbosity"))
     write_report(report, args)
     log.info("Finished SpecSAT")
     return 0
