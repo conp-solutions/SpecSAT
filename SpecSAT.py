@@ -102,7 +102,7 @@ class CNFgenerator(object):
     URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
     VERSION = "modularityGen_v2.1"
 
-    def __init__(self, cxx = "g++"):
+    def __init__(self, cxx="g++"):
         self.log = logging.getLogger(self.__class__.__name__)
         self.solver = None
         self.workdir = tempfile.TemporaryDirectory(
@@ -258,7 +258,7 @@ class Benchmarker(object):
         }
         report["hostinfo"] = get_host_info()
         return report
-    
+
     def _get_benchmarks(self):
         benchmarks = [{
             "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
@@ -306,7 +306,8 @@ class Benchmarker(object):
             detected_failure = False
             for benchmark in benchmarks:
                 if detected_failure and self.fail_early:
-                    self.log.warning("Stopping execution due to detected error")
+                    self.log.warning(
+                        "Stopping execution due to detected error")
                     break
 
                 log.info("Solving benchmark %r", benchmark)
@@ -317,17 +318,18 @@ class Benchmarker(object):
                     okay_run = True
                     cores = core_data["cores"]
                     solve_call = self.solver.solve_call(formula_path, cores)
-                    log.debug("Solving formula %r and cores %d with solving call %r", benchmark, cores, solve_call)
+                    log.debug(
+                        "Solving formula %r and cores %d with solving call %r", benchmark, cores, solve_call)
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
                     log.debug("Solved formula %r with '%r'",
-                            benchmark["parameter"], solve_result)
+                              benchmark["parameter"], solve_result)
                     if solve_result["status_code"] != benchmark["expected_status"]:
                         self.log.error("failed formula %r with unmatching status code '%d' instead of expected '%d'",
-                                    benchmark["parameter"], solve_result["status_code"], benchmark["expected_status"])
+                                       benchmark["parameter"], solve_result["status_code"], benchmark["expected_status"])
                         detected_failure = True
                         okay_run = False
                         report["failed_runs"] += 1
@@ -335,7 +337,8 @@ class Benchmarker(object):
                     solve_result["benchmark"] = benchmark
                     # TODO: also compare expected decisions and expected conflicts
                     report["raw_runs"].append(solve_result)
-                    log.debug("For formula %r and cores %d, obtained results %r", benchmark, cores, solve_result)
+                    log.debug("For formula %r and cores %d, obtained results %r",
+                              benchmark, cores, solve_result)
 
         # Assemble report
         specsat_report = {}
@@ -430,6 +433,7 @@ def main():
     write_report(report, args)
     log.info("Finished SpecSAT")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
