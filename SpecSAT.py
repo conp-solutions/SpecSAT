@@ -152,7 +152,7 @@ class CNFgenerator(object):
         return self.NAME
 
     def get_version(self):
-        return VERSION
+        return self.VERSION
 
 
 class SATsolver(object):
@@ -385,15 +385,16 @@ def parse_args():
 def write_report(report, args):
     """Write output files based on args."""
     nick_name = args.get("nick_name")
+    output_report = copy.deepcopy(report)
+    output_report["SpecSAT"]["cli_args"] = args
     if nick_name:
-        report["nick_name"] = nick_name
+        output_report["nick_name"] = nick_name
     report_file = args.get("report")
     if report_file:
         with open(report_file, 'w') as f:
-            json.dump(report, f, indent=4, sort_keys=True)
+            json.dump(output_report, f, indent=4, sort_keys=True)
     output_file = args.get("output")
     if output_file:
-        output_report = copy.deepcopy(report)
         output_report["SpecSAT"].pop("raw_runs")
         with open(output_file, 'w') as f:
             json.dump(report, f, indent=4, sort_keys=True)
@@ -402,14 +403,14 @@ def write_report(report, args):
 def main():
     args = parse_args()
 
-    if args.pop("debug"):
+    if args.get("debug"):
         logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
                             datefmt='%Y-%m-%d:%H:%M:%S', level=logging.DEBUG)
     else:
         logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s %(message)s',
                             datefmt='%Y-%m-%d:%H:%M:%S', level=logging.INFO)
 
-    if args.pop("version"):
+    if args.get("version"):
         print("Version: {}".format(VERSION))
         return 0
 
@@ -419,17 +420,12 @@ def main():
     generator = CNFgenerator(cxx=args.get("generator_cxx"))
     log.debug("Build generator '%s' with version '%s'",
               generator.get_name(), generator.get_version())
-    args.pop("generator_cxx")
 
     log.debug("Pre-SAT args: %r", args)
     log.info("Building SAT solver")
-    sat_args = ["sat_compiler", "sat_compile_flags", "sat_commit"]
     satsolver = SATsolver(compiler=args.get("sat_compiler"),
                           compile_flags=args.get("sat_compile_flags"),
                           commit=args.get("sat_commit"))
-    for sat_arg in sat_args:
-        if sat_arg in args:
-            args.pop(sat_arg)
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
