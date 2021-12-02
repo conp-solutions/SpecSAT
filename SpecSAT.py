@@ -411,6 +411,8 @@ def main():
         print("Version: {}".format(VERSION))
         return 0
 
+    log.info("SpecSAT 2021, version %s", VERSION)
+
     log.info("Building CNF generator")
     generator = CNFgenerator(cxx=args.get("generator_cxx"))
     log.debug("Build generator '%s' with version '%s'",
