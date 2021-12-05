@@ -215,7 +215,10 @@ class SATsolver(object):
     def solve_call(self, formula_path, cores):
         assert self.solver != None
         call = [self.solver] + self.SOLVER_PARAMETER + \
-            [f"-cores={cores}"] + [formula_path]
+            [f"-cores={cores}"]
+        if cores > 1:
+            call += ["-no-pre"]
+        call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
 
