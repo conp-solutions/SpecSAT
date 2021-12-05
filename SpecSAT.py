@@ -367,6 +367,8 @@ def parse_args():
                         action='store_true', help='Print version of the tool')
     parser.add_argument('--verbosity', default=0, type=int,
                         help='Set the verbosity level')
+    parser.add_argument('--work-dir', default="/dev/shm", type=str,
+                        help='Build and run tools in this directory')
 
     parser.add_argument('--generator-cxx', default="g++",
                         help='Use this compiler as CXX to compile the generator')
@@ -416,16 +418,17 @@ def main():
 
     log.info("SpecSAT 2021, version %s", VERSION)
 
-    log.info("Building CNF generator")
-    generator = CNFgenerator(cxx=args.get("generator_cxx"))
-    log.debug("Build generator '%s' with version '%s'",
-              generator.get_name(), generator.get_version())
+    with pushd(args["work_dir"]):
+        log.info("Building CNF generator")
+        generator = CNFgenerator(cxx=args.get("generator_cxx"))
+        log.debug("Build generator '%s' with version '%s'",
+                  generator.get_name(), generator.get_version())
 
-    log.debug("Pre-SAT args: %r", args)
-    log.info("Building SAT solver")
-    satsolver = SATsolver(compiler=args.get("sat_compiler"),
-                          compile_flags=args.get("sat_compile_flags"),
-                          commit=args.get("sat_commit"))
+        log.debug("Pre-SAT args: %r", args)
+        log.info("Building SAT solver")
+        satsolver = SATsolver(compiler=args.get("sat_compiler"),
+                              compile_flags=args.get("sat_compile_flags"),
+                              commit=args.get("sat_commit"))
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
