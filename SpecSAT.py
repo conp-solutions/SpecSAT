@@ -290,15 +290,10 @@ class Benchmarker(object):
         self.log.info("Detected cores: %r", relevant_cores)
         return relevant_cores
 
-    def run(self, lite=False, verbosity=0):
-        old_cwd = os.getcwd()
-        self.log.debug(
-            "Starting Benchmarking Run in cwd '%s', changing to '%s'", old_cwd, self.BASE_WORK_DIR)
-
+    def _run_iterations(self, report, iteration, lite=False):
         with pushd(self.BASE_WORK_DIR):
             benchmarks = self._get_benchmarks(only_one=lite)
             relevant_cores = self._detect_cores()
-            report = self._prepare_report()
 
             formula_path = os.path.join(self.BASE_WORK_DIR, "input.cnf")
             output_path = os.path.join(self.BASE_WORK_DIR, "output.log")
@@ -323,6 +318,7 @@ class Benchmarker(object):
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
+                    solve_result["iteration"] = iteration
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
                     log.debug("Solved formula %r with '%r'",
@@ -339,6 +335,21 @@ class Benchmarker(object):
                     report["raw_runs"].append(solve_result)
                     log.debug("For formula %r and cores %d, obtained results %r",
                               benchmark, cores, solve_result)
+
+    def run(self, iterations=1, lite=False, verbosity=0):
+        old_cwd = os.getcwd()
+
+        if iterations is None or iterations < 1:
+            self.log.warning(
+                "Detected invalid value for iterations '%r', replacing with 1.")
+            iterations = 1
+        self.log.debug(
+            "Starting Benchmarking Run in cwd '%s', changing to '%s'", old_cwd, self.BASE_WORK_DIR)
+
+        report = self._prepare_report()
+        # Add all iterations to report
+        for iteration in range(1, iterations+1):
+            self._run_iterations(report, iteration=iteration, lite=lite)
 
         # Assemble report
         specsat_report = {}
@@ -357,6 +368,8 @@ def parse_args():
                         action='store_true', help='Log debug output')
     parser.add_argument('-l', '--lite', default=False,
                         action='store_true', help='Only run a single, easy, benchmark to test the setup')
+    parser.add_argument('-i', '--iterations', default=1, type=int,
+                        help='Re-run a run multiple times')
     parser.add_argument('-n', '--nick-name', default=None,
                         help='Add this name as nick-name to the report.')
     parser.add_argument('-o', '--output', default=None,
@@ -432,8 +445,9 @@ def main():
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
-    report = benchmarker.run(lite=args.get(
-        "lite", False), verbosity=args.get("verbosity"))
+    report = benchmarker.run(iterations=args.get("iterations"),
+                             lite=args.get("lite", False),
+                             verbosity=args.get("verbosity"))
     write_report(report, args)
     log.info("Finished SpecSAT")
     return 0
