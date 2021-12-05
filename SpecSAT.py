@@ -344,6 +344,52 @@ class Benchmarker(object):
                     log.debug("For formula %r and cores %d, obtained results %r",
                               benchmark, cores, solve_result)
 
+    def _generate_summary(self, report):
+
+        self.log.info("Generating Summary")
+        sum_sequential_wall = 0
+        num_sequential_runs = 0
+        sum_max_parallel_wall = 0
+        sum_max_parallel_efficiency = 0
+        num_max_parallel_runs = 0
+        parallel_stats = {}
+        max_cores = 1
+        relevant_cores = self._detect_cores()
+        for cores in relevant_cores:
+            parallel_stats[cores["cores"]] = {
+                "sum_max_parallel_wall": 0,
+                "sum_max_parallel_efficiency": 0,
+                "num_max_parallel_runs": 0
+            }
+            max_cores = cores["cores"] if cores["cores"] > max_cores else max_cores
+        self.log.debug("Detected max cores %r", max_cores)
+        self.log.debug("Evaluating %d runs", len(report["raw_runs"]))
+        for run in report["raw_runs"]:
+            cores = run["cores"]["cores"]
+            self.log.debug("Using run with %r cores", cores)
+            if cores == 1:
+                sum_sequential_wall += run["wall_time_s"]
+                num_sequential_runs += 1
+            elif cores == max_cores:
+                sum_max_parallel_wall += run["wall_time_s"]
+                sum_max_parallel_efficiency += run["cpu_time_s"] / \
+                    (max_cores * run["wall_time_s"])
+                num_max_parallel_runs += 1
+
+            parallel_stats[cores]["sum_max_parallel_wall"] += run["wall_time_s"]
+            parallel_stats[cores]["sum_max_parallel_efficiency"] += run["cpu_time_s"] / (
+                max_cores * run["wall_time_s"]) if max_cores * run["wall_time_s"] else 1
+            parallel_stats[cores]["num_max_parallel_runs"] += 1
+
+        # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
+        report["summary"] = {
+            "total_runs": len(report["raw_runs"]),
+            "wall_time_sum_seq_s": sum_sequential_wall,
+            "wall_time_sum_par_s": sum_max_parallel_wall,
+            "efficiency_max_parallel_avg": sum_max_parallel_efficiency / num_max_parallel_runs if num_max_parallel_runs else 0,
+            "detailed_stats": parallel_stats
+        }
+
     def run(self, iterations=1, lite=False, verbosity=0):
         old_cwd = os.getcwd()
 
@@ -360,6 +406,9 @@ class Benchmarker(object):
         for iteration in range(1, iterations+1):
             self._run_iterations(report, iteration=iteration, lite=lite)
         report["end"] = datetime.datetime.now().isoformat()
+
+        self._generate_summary(report)
+        log.debug("Showed report summary: %r", report["summary"])
 
         # Assemble report
         specsat_report = {}
