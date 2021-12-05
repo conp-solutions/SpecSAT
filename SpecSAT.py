@@ -237,6 +237,7 @@ class Benchmarker(object):
         self.log.debug("Get SAT Solver")
         self.solver = solver
         self.generator = generator
+        self.relevant_cores = None
         self.fail_early = False  # TODO: make this a parameter that is updated in the line above
 
     def _prepare_report(self):
@@ -282,17 +283,20 @@ class Benchmarker(object):
         return benchmarks if not only_one else [benchmarks[0]]
 
     def _detect_cores(self):
-        relevant_cores = [{"cores": 1, "name": "single"}]
-        relevant_cores.append({"cores": psutil.cpu_count(
+        if self.relevant_cores:
+            return self.relevant_cores
+        self.relevant_cores = [{"cores": 1, "name": "single"}]
+        self.relevant_cores.append({"cores": psutil.cpu_count(
             logical=False), "name": "non-logical"})
         if psutil.cpu_count(logical=False) != psutil.cpu_count():
-            relevant_cores.append(
+            self.relevant_cores.append(
                 {"cores": psutil.cpu_count(), "name": "logical"})
-        half_cores = psutil.cpu_count(logical=False) / 2
-        if half_cores not in relevant_cores:
-            relevant_cores.append(half_cores)
-        self.log.info("Detected cores: %r", relevant_cores)
-        return relevant_cores
+        half_cores = psutil.cpu_count(logical=False) // 2
+        if half_cores != 1:
+            self.relevant_cores.append(
+                {"cores": half_cores, "name": "half-cores"})
+        self.log.info("Detected cores: %r", self.relevant_cores)
+        return self.relevant_cores
 
     def _run_iterations(self, report, iteration, lite=False):
         with pushd(self.BASE_WORK_DIR):
