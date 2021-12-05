@@ -93,7 +93,6 @@ def measure_call(call, output_file):
     }
 
 
-
 class CNFgenerator(object):
 
     NAME = "modgen"
@@ -263,19 +262,19 @@ class Benchmarker(object):
     def _get_benchmarks(self, only_one=False):
         benchmarks = [{
             "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
-            "bas_sequential_cpu_time": 25,
+            "base_sequential_cpu_time": 25,
             "expected_status": 10
         }, {
             "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
-            "bas_sequential_cpu_time": 20,
+            "base_sequential_cpu_time": 20,
             "expected_status": 20
         }, {
             "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
-            "bas_sequential_cpu_time": 25,
+            "base_sequential_cpu_time": 25,
             "expected_status": 10
         }, {
             "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
-            "bas_sequential_cpu_time": 35,
+            "base_sequential_cpu_time": 35,
             "expected_status": 10
         }
         ]
