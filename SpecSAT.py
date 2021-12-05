@@ -82,18 +82,16 @@ def get_host_info():
 
 def measure_call(call, output_file):
     """Run the given command, return measured performance data."""
-    start_wallclock = time.perf_counter_ns()
-    start_cpuclock = time.process_time_ns()
+    pre_stats = os.times()
     process = subprocess.run(call, stdout=output_file,
                              stderr=subprocess.DEVNULL)
-    end_wallclock = time.perf_counter_ns()
-    end_cpuclock = time.process_time_ns()
-
+    post_stats = os.times()
     return {
-        "wall_time_ns": end_wallclock - start_wallclock,
-        "cpu_time_ns": end_cpuclock - start_cpuclock,
+        "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
+        "wall_time_s": post_stats[4] - pre_stats[4],
         "status_code": process.returncode
     }
+
 
 
 class CNFgenerator(object):
