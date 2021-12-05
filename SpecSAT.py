@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import copy
+import datetime
 import json
 import logging
 import os
@@ -14,7 +15,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 
 
 # Create logger
@@ -348,8 +348,10 @@ class Benchmarker(object):
 
         report = self._prepare_report()
         # Add all iterations to report
+        report["start"] = datetime.datetime.now().isoformat()
         for iteration in range(1, iterations+1):
             self._run_iterations(report, iteration=iteration, lite=lite)
+        report["end"] = datetime.datetime.now().isoformat()
 
         # Assemble report
         specsat_report = {}
