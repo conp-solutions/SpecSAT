@@ -257,6 +257,7 @@ class Benchmarker(object):
             "build_command": self.solver.get_build_command()
         }
         report["hostinfo"] = get_host_info()
+        report["relevant_cores"] = self._detect_cores()
         return report
 
     def _get_benchmarks(self, only_one=False):
@@ -287,6 +288,9 @@ class Benchmarker(object):
         if psutil.cpu_count(logical=False) != psutil.cpu_count():
             relevant_cores.append(
                 {"cores": psutil.cpu_count(), "name": "logical"})
+        half_cores = psutil.cpu_count(logical=False) / 2
+        if half_cores not in relevant_cores:
+            relevant_cores.append(half_cores)
         self.log.info("Detected cores: %r", relevant_cores)
         return relevant_cores
 
