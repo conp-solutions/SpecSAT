@@ -215,6 +215,7 @@ class SATsolver(object):
             [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
+            call += ["-no-diversify"]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
