@@ -481,7 +481,7 @@ def parse_args():
     parser.add_argument('--generator-cxx', default="g++",
                         help='Use this compiler as CXX to compile the generator')
 
-    parser.add_argument('--sat-commit', default="0593ff1",
+    parser.add_argument('--sat-commit', default="v3.1",
                         help='Use this commit of the SAT solver')
     parser.add_argument('--sat-compiler', default=None,
                         help='Use this compiler as CXX')
