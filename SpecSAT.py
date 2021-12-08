@@ -374,7 +374,9 @@ class Benchmarker(object):
                 "sum_max_parallel_efficiency": 0,
                 "num_max_parallel_runs": 0
             }
-            max_cores = cores["cores"] if cores["cores"] > max_cores else max_cores
+        for run in report["raw_runs"]:
+            cores = run["cores"]["cores"]
+            max_cores = cores if cores > max_cores else max_cores
         self.log.debug("Detected max cores %r", max_cores)
         self.log.debug("Evaluating %d runs", len(report["raw_runs"]))
         for run in report["raw_runs"]:
@@ -386,7 +388,7 @@ class Benchmarker(object):
             elif cores == max_cores:
                 sum_max_parallel_wall += run["wall_time_s"]
                 sum_max_parallel_efficiency += run["cpu_time_s"] / \
-                    (max_cores * run["wall_time_s"])
+                    (max_cores * run["wall_time_s"]) if run["wall_time_s"] else 1
                 num_max_parallel_runs += 1
 
             parallel_stats[cores]["sum_max_parallel_wall"] += run["wall_time_s"]
@@ -394,14 +396,35 @@ class Benchmarker(object):
                 max_cores * run["wall_time_s"]) if max_cores * run["wall_time_s"] else 1
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
+        log.debug("Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
+                  sum_max_parallel_efficiency, num_max_parallel_runs, max_cores)
+        # Plain wait time to result
+        sequential_score = sum_sequential_wall
+        # Wait time to result, 1 result per core
+        parallel_score = sum_max_parallel_wall / max_cores
+        # With higher efficiency per core, we get better. Hence, use efficiency to limit factor.
+        # TODO: instead of (2-x), should this be (1/x) ?
+        efficiency_score = sum_max_parallel_wall * (2 - (sum_max_parallel_efficiency / num_max_parallel_runs)) / max_cores
         # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
+        log.debug("Detected scores: sequential: %r parallel: %r efficiency: %r",
+                  sequential_score, parallel_score, efficiency_score)
+
         report["summary"] = {
             "total_runs": len(report["raw_runs"]),
+            "score_sequential": sequential_score,
+            "score_full_parallel": parallel_score,
+            "score_efficiency": efficiency_score,
             "wall_time_sum_seq_s": sum_sequential_wall,
             "wall_time_sum_par_s": sum_max_parallel_wall,
             "efficiency_max_parallel_avg": sum_max_parallel_efficiency / num_max_parallel_runs if num_max_parallel_runs else 0,
             "detailed_stats": parallel_stats
         }
+
+        # Print Score
+        print ("Sequential Score:    {} (less is better)".format(sequential_score))
+        print ("Full Parallel Score: {} (less is better)".format(parallel_score))
+        print ("Efficiency Score:    {} (less is better)".format(efficiency_score))
+
 
     def run(self, iterations=1, lite=False, verbosity=0):
         old_cwd = os.getcwd()
