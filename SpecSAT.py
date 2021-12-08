@@ -279,6 +279,18 @@ class Benchmarker(object):
             "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
             "base_sequential_cpu_time": 35,
             "expected_status": 10
+        }, {
+            "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10
+        }, {
+            "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10
+        }, {
+            "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10
         }
         ]
         return benchmarks if not only_one else [benchmarks[0]]
