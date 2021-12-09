@@ -215,6 +215,7 @@ class SATsolver(object):
             [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
+            call += ["-no-diversify"]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
@@ -278,6 +279,20 @@ class Benchmarker(object):
             "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
             "base_sequential_cpu_time": 35,
             "expected_status": 10
+        }, {
+            "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10
+        }, {
+            "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10,
+            "restriction": "sequential"
+        }, {
+            "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
+            "base_sequential_cpu_time": 100,
+            "expected_status": 10,
+            "restriction": "parallel"
         }
         ]
         return benchmarks if not only_one else [benchmarks[0]]
@@ -318,6 +333,11 @@ class Benchmarker(object):
                 for core_data in relevant_cores:
                     if detected_failure and self.fail_early:
                         break
+                    restriction = benchmark.get("restriction", "")
+                    # Check whether we should run here!
+                    if (restriction == "sequential" and cores != 1) or (restriction == "parallel" and cores == 1):
+                        log.debug("Skip benchmark restricted to %s with %d cores", restriction, cores)
+                        continue
                     okay_run = True
                     cores = core_data["cores"]
                     solve_call = self.solver.solve_call(formula_path, cores)
@@ -361,7 +381,9 @@ class Benchmarker(object):
                 "sum_max_parallel_efficiency": 0,
                 "num_max_parallel_runs": 0
             }
-            max_cores = cores["cores"] if cores["cores"] > max_cores else max_cores
+        for run in report["raw_runs"]:
+            cores = run["cores"]["cores"]
+            max_cores = cores if cores > max_cores else max_cores
         self.log.debug("Detected max cores %r", max_cores)
         self.log.debug("Evaluating %d runs", len(report["raw_runs"]))
         for run in report["raw_runs"]:
@@ -373,7 +395,7 @@ class Benchmarker(object):
             elif cores == max_cores:
                 sum_max_parallel_wall += run["wall_time_s"]
                 sum_max_parallel_efficiency += run["cpu_time_s"] / \
-                    (max_cores * run["wall_time_s"])
+                    (max_cores * run["wall_time_s"]) if run["wall_time_s"] else 1
                 num_max_parallel_runs += 1
 
             parallel_stats[cores]["sum_max_parallel_wall"] += run["wall_time_s"]
@@ -381,14 +403,35 @@ class Benchmarker(object):
                 max_cores * run["wall_time_s"]) if max_cores * run["wall_time_s"] else 1
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
+        log.debug("Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
+                  sum_max_parallel_efficiency, num_max_parallel_runs, max_cores)
+        # Plain wait time to result
+        sequential_score = sum_sequential_wall
+        # Wait time to result, 1 result per core
+        parallel_score = sum_max_parallel_wall / max_cores
+        # With higher efficiency per core, we get better. Hence, use efficiency to limit factor.
+        # TODO: instead of (2-x), should this be (1/x) ?
+        efficiency_score = sum_max_parallel_wall * (2 - (sum_max_parallel_efficiency / num_max_parallel_runs)) / max_cores
         # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
+        log.debug("Detected scores: sequential: %r parallel: %r efficiency: %r",
+                  sequential_score, parallel_score, efficiency_score)
+
         report["summary"] = {
             "total_runs": len(report["raw_runs"]),
+            "score_sequential": sequential_score,
+            "score_full_parallel": parallel_score,
+            "score_efficiency": efficiency_score,
             "wall_time_sum_seq_s": sum_sequential_wall,
             "wall_time_sum_par_s": sum_max_parallel_wall,
             "efficiency_max_parallel_avg": sum_max_parallel_efficiency / num_max_parallel_runs if num_max_parallel_runs else 0,
             "detailed_stats": parallel_stats
         }
+
+        # Print Score
+        print ("Sequential Score:    {} (less is better)".format(sequential_score))
+        print ("Full Parallel Score: {} (less is better)".format(parallel_score))
+        print ("Efficiency Score:    {} (less is better)".format(efficiency_score))
+
 
     def run(self, iterations=1, lite=False, verbosity=0):
         old_cwd = os.getcwd()
@@ -445,7 +488,7 @@ def parse_args():
     parser.add_argument('--generator-cxx', default="g++",
                         help='Use this compiler as CXX to compile the generator')
 
-    parser.add_argument('--sat-commit', default="0593ff1",
+    parser.add_argument('--sat-commit', default="v3.1",
                         help='Use this commit of the SAT solver')
     parser.add_argument('--sat-compiler', default=None,
                         help='Use this compiler as CXX')
