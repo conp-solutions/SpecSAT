@@ -286,11 +286,13 @@ class Benchmarker(object):
         }, {
             "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
             "base_sequential_cpu_time": 100,
-            "expected_status": 10
+            "expected_status": 10,
+            "restriction": "sequential"
         }, {
             "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
             "base_sequential_cpu_time": 100,
-            "expected_status": 10
+            "expected_status": 10,
+            "restriction": "parallel"
         }
         ]
         return benchmarks if not only_one else [benchmarks[0]]
@@ -331,6 +333,11 @@ class Benchmarker(object):
                 for core_data in relevant_cores:
                     if detected_failure and self.fail_early:
                         break
+                    restriction = benchmark.get("restriction", "")
+                    # Check whether we should run here!
+                    if (restriction == "sequential" and cores != 1) or (restriction == "parallel" and cores == 1):
+                        log.debug("Skip benchmark restricted to %s with %d cores", restriction, cores)
+                        continue
                     okay_run = True
                     cores = core_data["cores"]
                     solve_call = self.solver.solve_call(formula_path, cores)
