@@ -334,12 +334,12 @@ class Benchmarker(object):
                     if detected_failure and self.fail_early:
                         break
                     restriction = benchmark.get("restriction", "")
+                    cores = core_data["cores"]
                     # Check whether we should run here!
                     if (restriction == "sequential" and cores != 1) or (restriction == "parallel" and cores == 1):
                         log.debug("Skip benchmark restricted to %s with %d cores", restriction, cores)
                         continue
                     okay_run = True
-                    cores = core_data["cores"]
                     solve_call = self.solver.solve_call(formula_path, cores)
                     log.debug(
                         "Solving formula %r and cores %d with solving call %r", benchmark, cores, solve_call)
