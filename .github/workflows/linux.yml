@@ -12,9 +12,12 @@ jobs:
 
     steps:
     - name: Install Packages
-      run: sudo apt-get install zlib1g-dev make
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
 
     - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: pip3 install psutil requests --upgrade --user -U
 
     - name: run CI script
       run: ./SpecSAT.py -d
