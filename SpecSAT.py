@@ -28,7 +28,7 @@ def get_thp_status():
     call = ["cat", "/sys/kernel/mm/transparent_hugepage/enabled"]
     try:
         log.debug("Looking up THP status with call %r", call)
-        process = subprocess.run(call, capture_output=True)
+        process = subprocess.run(call, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         thp_status = str(process.stdout)
     except Exception as e:
         log.warning("Received exception %r when looking up THP status", e)
@@ -43,7 +43,7 @@ def get_thp_status():
 def run_silently(call, **kwargs):
     """Run command, an donly print output in case of failure."""
     log.debug("Building solver with %r", call)
-    process = subprocess.run(call, **kwargs, capture_output=True)
+    process = subprocess.run(call, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if process.returncode != 0:
         log.error("Command %r failed with status %d", call, process.returncode)
         print("STDOUT: ", process.stdout.decode("utf_8"))
@@ -205,7 +205,7 @@ class SATsolver(object):
             version_call = ["git", "describe"]
             self.log.debug("Get solver version with: %r", version_call)
             process = subprocess.run(
-                version_call, cwd=self.solverdir, capture_output=True)
+                version_call, cwd=self.solverdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.version = process.stdout.strip().decode('utf-8')
         return self.version
 
