@@ -405,13 +405,16 @@ class Benchmarker(object):
 
         log.debug("Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
                   sum_max_parallel_efficiency, num_max_parallel_runs, max_cores)
-        # Plain wait time to result
-        sequential_score = sum_sequential_wall
-        # Wait time to result, 1 result per core
-        parallel_score = sum_max_parallel_wall / max_cores
+        # Plain wait time to result, average via runs, so that multiple iterations still result in same score
+        sequential_score = sum_sequential_wall / num_sequential_runs * 100
+        # Wait time to result, 1 result per core, average via runs so that multiple iterations still result in same score
+        parallel_score = sum_max_parallel_wall / \
+            (max_cores * num_max_parallel_runs) * 100
         # With higher efficiency per core, we get better. Hence, use efficiency to limit factor.
         # TODO: instead of (2-x), should this be (1/x) ?
-        efficiency_score = sum_max_parallel_wall * (2 - (sum_max_parallel_efficiency / num_max_parallel_runs)) / max_cores
+        efficiency_score = sum_max_parallel_wall / \
+            (num_max_parallel_runs * max_cores) * \
+            (2 - (sum_max_parallel_efficiency / num_max_parallel_runs))
         # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
         log.debug("Detected scores: sequential: %r parallel: %r efficiency: %r",
                   sequential_score, parallel_score, efficiency_score)
@@ -428,10 +431,9 @@ class Benchmarker(object):
         }
 
         # Print Score
-        print ("Sequential Score:    {} (less is better)".format(sequential_score))
-        print ("Full Parallel Score: {} (less is better)".format(parallel_score))
-        print ("Efficiency Score:    {} (less is better)".format(efficiency_score))
-
+        print("Sequential Score:    {} (less is better)".format(sequential_score))
+        print("Full Parallel Score: {} (less is better)".format(parallel_score))
+        print("Efficiency Score:    {} (less is better)".format(efficiency_score))
 
     def run(self, iterations=1, lite=False, verbosity=0):
         old_cwd = os.getcwd()
