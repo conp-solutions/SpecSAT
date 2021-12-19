@@ -155,15 +155,15 @@ class CNFgenerator(object):
 
 
 class SATsolver(object):
-    BINARY = ["build", "release", "bin", "mergesat"]
     NAME = "mergesat"
     REPO = "https://github.com/conp-solutions/mergesat.git"
     COMMIT = "306d2e8ef9733291acd6a07716c6158546a1c8d5"
     SOLVER_PARAMETER = ["-no-diversify"]
 
-    def __init__(self, compiler=None, compile_flags=None, commit=None):
+    def __init__(self, compiler=None, compile_flags=None, commit=None, mode=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
+        self.mode = "debug" if mode == "debug" else "release"
         self.solver = None
         self.version = None
         self.workdir = tempfile.TemporaryDirectory(
@@ -174,6 +174,7 @@ class SATsolver(object):
         self._get_solver(self.solverdir, commit=commit)
         self.log.info("Retrieved solver '%s' with version '%s'",
                       self.NAME, self._get_version())
+        self.binary = ["build", self.mode, "bin", "mergesat"]
         self._build_solver(compiler=compiler, compile_flags=compile_flags)
         assert self.solver != None
         assert self.build_command != None
@@ -191,7 +192,7 @@ class SATsolver(object):
 
     def _build_solver(self, compiler=None, compile_flags=None):
         self.build_command = ["make", "BUILD_TYPE=parallel",
-                              "r", "-j", str(psutil.cpu_count())]
+                              "d" if self.mode == "debug" else "r", "-j", str(psutil.cpu_count())]
         if compiler is not None:
             self.build_command.append(f"CXX={compiler}")
         if compile_flags is not None:
@@ -200,7 +201,7 @@ class SATsolver(object):
         self.log.debug("Building solver with: %r in cwd: '%s'",
                        self.build_command, self.solverdir)
         run_silently(self.build_command, cwd=self.solverdir)
-        self.solver = os.path.join(self.solverdir, *self.BINARY)
+        self.solver = os.path.join(self.solverdir, *self.binary)
 
     def _get_version(self):
         if self.version is None:
@@ -498,6 +499,8 @@ def parse_args():
                         help='Use this compiler as CXX')
     parser.add_argument('--sat-compile-flags', default=None,
                         help='Add this string to CXXFLAGS and LDFLAGS')
+    parser.add_argument('--sat-mode', default="release", choices=["release", "debug"],
+                        help='Use solver in release or debug mode')
 
     args = parser.parse_args()
     return vars(args)
@@ -547,7 +550,8 @@ def main():
         log.info("Building SAT solver")
         satsolver = SATsolver(compiler=args.get("sat_compiler"),
                               compile_flags=args.get("sat_compile_flags"),
-                              commit=args.get("sat_commit"))
+                              commit=args.get("sat_commit"),
+                              mode=args.get("sat_mode"))
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
