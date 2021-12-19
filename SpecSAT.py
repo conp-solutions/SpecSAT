@@ -232,6 +232,32 @@ class SATsolver(object):
     def get_version(self):
         return self._get_version()
 
+    def validate_conflicts(self, expected_conflicts, cores, log_file_name):
+        """Check whether for given cores, conflicts have been detected."""
+
+        match_line = "c SUM stats conflicts:           :"
+        # parallel solvers report SUM of all conflicts, hence, multiply
+        match_conflicts = int(expected_conflicts) * cores
+
+        with open(log_file_name) as log_file:
+            all_lines = log_file.readlines()
+            for line in all_lines:
+                if line.startswith(match_line):
+                    # extract conflicts
+                    log.debug("Extracting conflicts from line '%s'", line)
+                    conflicts = int(line.split(":")[2])
+                    log.debug("Extraced %d conflicts with %d cores",
+                              conflicts, cores)
+                    if match_conflicts == conflicts:
+                        return True
+                    else:
+                        self.log.warning(
+                            "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat", match_conflicts, cores, conflicts)
+                        return False
+
+        # In case we fail to match anything successfully, fail overall
+        return False
+
 
 class Benchmarker(object):
     BASE_WORK_DIR = "/dev/shm"  # For now, support Linux
@@ -269,26 +295,32 @@ class Benchmarker(object):
         benchmarks = [{
             "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
             "base_sequential_cpu_time": 25,
+            "expected_sequential_conflicts": 48,
             "expected_status": 10
         }, {
             "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
             "base_sequential_cpu_time": 20,
+            "expected_sequential_conflicts": 728584,
             "expected_status": 20
         }, {
             "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
             "base_sequential_cpu_time": 25,
+            "expected_sequential_conflicts": 352,
             "expected_status": 10
         }, {
             "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
             "base_sequential_cpu_time": 35,
+            "expected_sequential_conflicts": 606635,
             "expected_status": 10
         }, {
             "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
             "base_sequential_cpu_time": 100,
+            "expected_sequential_conflicts": 594464,
             "expected_status": 10
         }, {
             "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
             "base_sequential_cpu_time": 100,
+            "expected_sequential_conflicts": 2172508,
             "expected_status": 10,
             "restriction": "sequential"
         }, {
@@ -349,6 +381,12 @@ class Benchmarker(object):
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
+                    if cores == 1:
+                        if not self.solver.validate_conflicts(benchmark.get("expected_sequential_conflicts"), cores, output_path):
+                            detected_failure = True
+                            solve_result["validated"] = False
+                        else:
+                            solve_result["validated"] = None
                     solve_result["iteration"] = iteration
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
@@ -362,10 +400,10 @@ class Benchmarker(object):
                         report["failed_runs"] += 1
                     solve_result["okay"] = okay_run
                     solve_result["benchmark"] = benchmark
-                    # TODO: also compare expected decisions and expected conflicts
                     report["raw_runs"].append(solve_result)
                     log.debug("For formula %r and cores %d, obtained results %r",
                               benchmark, cores, solve_result)
+        return detected_failure
 
     def _generate_summary(self, report):
 
@@ -451,9 +489,13 @@ class Benchmarker(object):
         report = self._prepare_report()
         # Add all iterations to report
         report["start"] = datetime.datetime.now().isoformat()
+        detected_failure = False
         for iteration in range(1, iterations+1):
-            self._run_iterations(report, iteration=iteration, lite=lite)
+            if self._run_iterations(report, iteration=iteration, lite=lite):
+                log.warning("Detected a failure in iteration %d", iteration)
+                detected_failure = True
         report["end"] = datetime.datetime.now().isoformat()
+        report["detected_failure"] = detected_failure
 
         self._generate_summary(report)
         log.debug("Showed report summary: %r", report["summary"])
@@ -466,6 +508,8 @@ class Benchmarker(object):
             self.log.debug("Printing report %r", specsat_report)
             print(json.dumps(specsat_report, indent=4, sort_keys=True))
 
+        if detected_failure:
+            log.error("Detected unexpected behavior")
         return specsat_report
 
 
