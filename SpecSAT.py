@@ -28,8 +28,7 @@ def get_thp_status():
     call = ["cat", "/sys/kernel/mm/transparent_hugepage/enabled"]
     try:
         log.debug("Looking up THP status with call %r", call)
-        process = subprocess.run(
-            call, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.run(call, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         thp_status = str(process.stdout)
     except Exception as e:
         log.warning("Received exception %r when looking up THP status", e)
@@ -45,7 +44,8 @@ def run_silently(call, **kwargs):
     """Run command, an donly print output in case of failure."""
     log.debug("Silently executing call %r", call)
     process = subprocess.run(
-        call, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        call, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     if process.returncode != 0:
         log.error("Command %r failed with status %d", call, process.returncode)
         print("STDOUT: ", process.stdout.decode("utf_8"))
@@ -78,20 +78,19 @@ def get_host_info():
         "platform_release": platform.release(),
         "memory_total": svmem.total,
         "memory_available": svmem.available,
-        "memory_thp_status": get_thp_status()
+        "memory_thp_status": get_thp_status(),
     }
 
 
 def measure_call(call, output_file):
     """Run the given command, return measured performance data."""
     pre_stats = os.times()
-    process = subprocess.run(call, stdout=output_file,
-                             stderr=subprocess.DEVNULL)
+    process = subprocess.run(call, stdout=output_file, stderr=subprocess.DEVNULL)
     post_stats = os.times()
     return {
         "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
         "wall_time_s": post_stats[4] - pre_stats[4],
-        "status_code": process.returncode
+        "status_code": process.returncode,
     }
 
 
@@ -105,9 +104,9 @@ class CNFgenerator(object):
         self.log = logging.getLogger(self.__class__.__name__)
         self.solver = None
         self.workdir = tempfile.TemporaryDirectory(
-            prefix="specsat_solver", dir=os.getcwd())
-        self.sourcefile = os.path.join(
-            self.workdir.name, "modularityGen_v2.1.cpp")
+            prefix="specsat_solver", dir=os.getcwd()
+        )
+        self.sourcefile = os.path.join(self.workdir.name, "modularityGen_v2.1.cpp")
         self.generator = os.path.join(self.workdir.name, self.NAME)
         self.log.debug("Get generator with workdir '%s'", self.workdir.name)
         self._get_generator()
@@ -121,7 +120,7 @@ class CNFgenerator(object):
 
             # download
             response = requests.get(self.URL, stream=True)
-            with open(targz_file_name, 'wb') as out_file:
+            with open(targz_file_name, "wb") as out_file:
                 shutil.copyfileobj(response.raw, out_file)
             del response
 
@@ -131,20 +130,21 @@ class CNFgenerator(object):
             tar.close()
 
     def _build_generator(self, cxx="g++"):
-        build_call = [cxx, "-O2", self.sourcefile,
-                      "-o", self.generator]  # "-Wall"
+        build_call = [cxx, "-O2", self.sourcefile, "-o", self.generator]  # "-Wall"
         self.log.debug("Building solver with %r", build_call)
         run_silently(build_call)
 
     def generate(self, output_file, parameter=None):
-        self.log.debug("Generate formula in file '%s' with parameters %r",
-                       output_file, parameter)
+        self.log.debug(
+            "Generate formula in file '%s' with parameters %r", output_file, parameter
+        )
         generate_call = [self.generator]
         if parameter is not None:
             generate_call += parameter
         with open(output_file, "w") as outfile:
-            self.log.debug("Calling generator '%r' with stdout='%s'",
-                           generate_call, output_file)
+            self.log.debug(
+                "Calling generator '%r' with stdout='%s'", generate_call, output_file
+            )
             subprocess.run(generate_call, stdout=outfile)
 
     def get_name(self):
@@ -167,13 +167,15 @@ class SATsolver(object):
         self.solver = None
         self.version = None
         self.workdir = tempfile.TemporaryDirectory(
-            prefix="specsat_solver", dir=os.getcwd())
+            prefix="specsat_solver", dir=os.getcwd()
+        )
         self.solverdir = os.path.join(self.workdir.name, self.NAME)
         self.log.debug("Run solver with workdir '%s'", self.workdir.name)
 
         self._get_solver(self.solverdir, commit=commit)
-        self.log.info("Retrieved solver '%s' with version '%s'",
-                      self.NAME, self._get_version())
+        self.log.info(
+            "Retrieved solver '%s' with version '%s'", self.NAME, self._get_version()
+        )
         self.binary = ["build", self.mode, "bin", "mergesat"]
         self._build_solver(compiler=compiler, compile_flags=compile_flags)
         assert self.solver != None
@@ -191,15 +193,21 @@ class SATsolver(object):
                 run_silently(checkout_call)
 
     def _build_solver(self, compiler=None, compile_flags=None):
-        self.build_command = ["make", "BUILD_TYPE=parallel",
-                              "d" if self.mode == "debug" else "r", "-j", str(psutil.cpu_count())]
+        self.build_command = [
+            "make",
+            "BUILD_TYPE=parallel",
+            "d" if self.mode == "debug" else "r",
+            "-j",
+            str(psutil.cpu_count()),
+        ]
         if compiler is not None:
             self.build_command.append(f"CXX={compiler}")
         if compile_flags is not None:
             self.build_command.append(f"CXX_EXTRA_FLAGS={compile_flags}")
             self.build_command.append(f"LD_EXTRA_FLAGS={compile_flags}")
-        self.log.debug("Building solver with: %r in cwd: '%s'",
-                       self.build_command, self.solverdir)
+        self.log.debug(
+            "Building solver with: %r in cwd: '%s'", self.build_command, self.solverdir
+        )
         run_silently(self.build_command, cwd=self.solverdir)
         self.solver = os.path.join(self.solverdir, *self.binary)
 
@@ -208,17 +216,19 @@ class SATsolver(object):
             version_call = ["git", "describe"]
             self.log.debug("Get solver version with: %r", version_call)
             process = subprocess.run(
-                version_call, cwd=self.solverdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            self.version = process.stdout.strip().decode('utf-8')
+                version_call,
+                cwd=self.solverdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.version = process.stdout.strip().decode("utf-8")
         return self.version
 
     def solve_call(self, formula_path, cores):
         assert self.solver != None
-        call = [self.solver] + self.SOLVER_PARAMETER + \
-            [f"-cores={cores}"]
+        call = [self.solver] + self.SOLVER_PARAMETER + [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
-            call += ["-no-diversify"]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
@@ -246,13 +256,16 @@ class SATsolver(object):
                     # extract conflicts
                     log.debug("Extracting conflicts from line '%s'", line)
                     conflicts = int(line.split(":")[2])
-                    log.debug("Extraced %d conflicts with %d cores",
-                              conflicts, cores)
+                    log.debug("Extraced %d conflicts with %d cores", conflicts, cores)
                     if match_conflicts == conflicts:
                         return True
                     else:
                         self.log.warning(
-                            "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat", match_conflicts, cores, conflicts)
+                            "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat",
+                            match_conflicts,
+                            cores,
+                            conflicts,
+                        )
                         return False
 
         # In case we fail to match anything successfully, fail overall
@@ -268,7 +281,7 @@ class Benchmarker(object):
         self.solver = solver
         self.generator = generator
         self.relevant_cores = None
-        self.fail_early = False  # TODO: make this a parameter that is updated in the line above
+        self.fail_early = False
 
     def _prepare_report(self):
         report = {}
@@ -279,56 +292,64 @@ class Benchmarker(object):
 
         report["generator"] = {
             "name": self.generator.get_name(),
-            "version": self.generator.get_version()
+            "version": self.generator.get_version(),
         }
 
         report["satsolver"] = {
             "name": self.solver.get_name(),
             "version": self.solver.get_version(),
-            "build_command": self.solver.get_build_command()
+            "build_command": self.solver.get_build_command(),
         }
         report["hostinfo"] = get_host_info()
         report["relevant_cores"] = self._detect_cores()
         return report
 
     def _get_benchmarks(self, only_one=False):
-        benchmarks = [{
-            "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
-            "base_sequential_cpu_time": 25,
-            "expected_sequential_conflicts": 48,
-            "expected_status": 10
-        }, {
-            "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
-            "base_sequential_cpu_time": 20,
-            "expected_sequential_conflicts": 728584,
-            "expected_status": 20
-        }, {
-            "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
-            "base_sequential_cpu_time": 25,
-            "expected_sequential_conflicts": 352,
-            "expected_status": 10
-        }, {
-            "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
-            "base_sequential_cpu_time": 35,
-            "expected_sequential_conflicts": 606635,
-            "expected_status": 10
-        }, {
-            "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
-            "base_sequential_cpu_time": 100,
-            "expected_sequential_conflicts": 594464,
-            "expected_status": 10
-        }, {
-            "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
-            "base_sequential_cpu_time": 100,
-            "expected_sequential_conflicts": 2172508,
-            "expected_status": 10,
-            "restriction": "sequential"
-        }, {
-            "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
-            "base_sequential_cpu_time": 100,
-            "expected_status": 10,
-            "restriction": "parallel"
-        }
+        # benchmark.get("expected_sequential_conflicts" if cores == 1 else "expected_1parallel_conflicts")
+        benchmarks = [
+            {
+                "parameter": ["-s", "4900", "-n", "1000", "-m", "3000"],
+                "base_sequential_cpu_time": 25,
+                "expected_sequential_conflicts": 48,
+                "expected_status": 10,
+            },
+            {
+                "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
+                "base_sequential_cpu_time": 20,
+                "expected_sequential_conflicts": 728584,
+                "expected_status": 20,
+            },
+            {
+                "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
+                "base_sequential_cpu_time": 25,
+                "expected_sequential_conflicts": 352,
+                "expected_status": 10,
+            },
+            {
+                "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
+                "base_sequential_cpu_time": 35,
+                "expected_sequential_conflicts": 606635,
+                "expected_status": 10,
+            },
+            {
+                "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
+                "base_sequential_cpu_time": 100,
+                "expected_sequential_conflicts": 594464,
+                "expected_status": 10,
+            },
+            {
+                "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
+                "base_sequential_cpu_time": 100,
+                "expected_sequential_conflicts": 2172508,
+                "expected_status": 10,
+                "restriction": "sequential",
+            },
+            {
+                "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
+                "base_sequential_cpu_time": 100,
+                "expected_status": 10,
+                "restriction": "parallel",
+            },
         ]
         return benchmarks if not only_one else [benchmarks[0]]
 
@@ -336,15 +357,14 @@ class Benchmarker(object):
         if self.relevant_cores:
             return self.relevant_cores
         self.relevant_cores = [{"cores": 1, "name": "single"}]
-        self.relevant_cores.append({"cores": psutil.cpu_count(
-            logical=False), "name": "non-logical"})
+        self.relevant_cores.append(
+            {"cores": psutil.cpu_count(logical=False), "name": "non-logical"}
+        )
         if psutil.cpu_count(logical=False) != psutil.cpu_count():
-            self.relevant_cores.append(
-                {"cores": psutil.cpu_count(), "name": "logical"})
+            self.relevant_cores.append({"cores": psutil.cpu_count(), "name": "logical"})
         half_cores = psutil.cpu_count(logical=False) // 2
         if half_cores != 1:
-            self.relevant_cores.append(
-                {"cores": half_cores, "name": "half-cores"})
+            self.relevant_cores.append({"cores": half_cores, "name": "half-cores"})
         self.log.info("Detected cores: %r", self.relevant_cores)
         return self.relevant_cores
 
@@ -359,8 +379,7 @@ class Benchmarker(object):
             detected_failure = False
             for benchmark in benchmarks:
                 if detected_failure and self.fail_early:
-                    self.log.warning(
-                        "Stopping execution due to detected error")
+                    self.log.warning("Stopping execution due to detected error")
                     break
 
                 log.info("Solving benchmark %r", benchmark)
@@ -371,18 +390,32 @@ class Benchmarker(object):
                     restriction = benchmark.get("restriction", "")
                     cores = core_data["cores"]
                     # Check whether we should run here!
-                    if (restriction == "sequential" and cores != 1) or (restriction == "parallel" and cores == 1):
-                        log.debug("Skip benchmark restricted to %s with %d cores", restriction, cores)
+                    if (restriction == "sequential" and cores != 1) or (
+                        restriction == "parallel" and cores == 1
+                    ):
+                        log.debug(
+                            "Skip benchmark restricted to %s with %d cores",
+                            restriction,
+                            cores,
+                        )
                         continue
                     okay_run = True
                     solve_call = self.solver.solve_call(formula_path, cores)
                     log.debug(
-                        "Solving formula %r and cores %d with solving call %r", benchmark, cores, solve_call)
+                        "Solving formula %r and cores %d with solving call %r",
+                        benchmark,
+                        cores,
+                        solve_call,
+                    )
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
                     if cores == 1:
-                        if not self.solver.validate_conflicts(benchmark.get("expected_sequential_conflicts"), cores, output_path):
+                        if not self.solver.validate_conflicts(
+                            benchmark.get("expected_sequential_conflicts"),
+                            cores,
+                            output_path,
+                        ):
                             detected_failure = True
                             solve_result["validated"] = False
                         else:
@@ -390,19 +423,30 @@ class Benchmarker(object):
                     solve_result["iteration"] = iteration
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
-                    log.debug("Solved formula %r with '%r'",
-                              benchmark["parameter"], solve_result)
+                    log.debug(
+                        "Solved formula %r with '%r'",
+                        benchmark["parameter"],
+                        solve_result,
+                    )
                     if solve_result["status_code"] != benchmark["expected_status"]:
-                        self.log.error("failed formula %r with unmatching status code '%d' instead of expected '%d'",
-                                       benchmark["parameter"], solve_result["status_code"], benchmark["expected_status"])
+                        self.log.error(
+                            "failed formula %r with unmatching status code '%d' instead of expected '%d'",
+                            benchmark["parameter"],
+                            solve_result["status_code"],
+                            benchmark["expected_status"],
+                        )
                         detected_failure = True
                         okay_run = False
                         report["failed_runs"] += 1
                     solve_result["okay"] = okay_run
                     solve_result["benchmark"] = benchmark
                     report["raw_runs"].append(solve_result)
-                    log.debug("For formula %r and cores %d, obtained results %r",
-                              benchmark, cores, solve_result)
+                    log.debug(
+                        "For formula %r and cores %d, obtained results %r",
+                        benchmark,
+                        cores,
+                        solve_result,
+                    )
         return detected_failure
 
     def _generate_summary(self, report):
@@ -420,7 +464,7 @@ class Benchmarker(object):
             parallel_stats[cores["cores"]] = {
                 "sum_max_parallel_wall": 0,
                 "sum_max_parallel_efficiency": 0,
-                "num_max_parallel_runs": 0
+                "num_max_parallel_runs": 0,
             }
         for run in report["raw_runs"]:
             cores = run["cores"]["cores"]
@@ -435,30 +479,47 @@ class Benchmarker(object):
                 num_sequential_runs += 1
             elif cores == max_cores:
                 sum_max_parallel_wall += run["wall_time_s"]
-                sum_max_parallel_efficiency += run["cpu_time_s"] / \
-                    (max_cores * run["wall_time_s"]) if run["wall_time_s"] else 1
+                sum_max_parallel_efficiency += (
+                    run["cpu_time_s"] / (max_cores * run["wall_time_s"])
+                    if run["wall_time_s"]
+                    else 1
+                )
                 num_max_parallel_runs += 1
 
             parallel_stats[cores]["sum_max_parallel_wall"] += run["wall_time_s"]
-            parallel_stats[cores]["sum_max_parallel_efficiency"] += run["cpu_time_s"] / (
-                max_cores * run["wall_time_s"]) if max_cores * run["wall_time_s"] else 1
+            parallel_stats[cores]["sum_max_parallel_efficiency"] += (
+                run["cpu_time_s"] / (max_cores * run["wall_time_s"])
+                if max_cores * run["wall_time_s"]
+                else 1
+            )
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
-        log.debug("Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
-                  sum_max_parallel_efficiency, num_max_parallel_runs, max_cores)
+        log.debug(
+            "Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
+            sum_max_parallel_efficiency,
+            num_max_parallel_runs,
+            max_cores,
+        )
         # Plain wait time to result, average via runs, so that multiple iterations still result in same score
         sequential_score = sum_sequential_wall / num_sequential_runs * 100
         # Wait time to result, 1 result per core, average via runs so that multiple iterations still result in same score
-        parallel_score = sum_max_parallel_wall / \
-            (max_cores * num_max_parallel_runs) * 100
+        parallel_score = (
+            sum_max_parallel_wall / (max_cores * num_max_parallel_runs) * 100
+        )
         # With higher efficiency per core, we get better. Hence, use efficiency to limit factor.
         # TODO: instead of (2-x), should this be (1/x) ?
-        efficiency_score = sum_max_parallel_wall / \
-            (num_max_parallel_runs * max_cores) * \
-            (2 - (sum_max_parallel_efficiency / num_max_parallel_runs))
+        efficiency_score = (
+            sum_max_parallel_wall
+            / (num_max_parallel_runs * max_cores)
+            * (2 - (sum_max_parallel_efficiency / num_max_parallel_runs))
+        )
         # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
-        log.debug("Detected scores: sequential: %r parallel: %r efficiency: %r",
-                  sequential_score, parallel_score, efficiency_score)
+        log.debug(
+            "Detected scores: sequential: %r parallel: %r efficiency: %r",
+            sequential_score,
+            parallel_score,
+            efficiency_score,
+        )
 
         report["summary"] = {
             "total_runs": len(report["raw_runs"]),
@@ -467,8 +528,11 @@ class Benchmarker(object):
             "score_efficiency": efficiency_score,
             "wall_time_sum_seq_s": sum_sequential_wall,
             "wall_time_sum_par_s": sum_max_parallel_wall,
-            "efficiency_max_parallel_avg": sum_max_parallel_efficiency / num_max_parallel_runs if num_max_parallel_runs else 0,
-            "detailed_stats": parallel_stats
+            "efficiency_max_parallel_avg": sum_max_parallel_efficiency
+            / num_max_parallel_runs
+            if num_max_parallel_runs
+            else 0,
+            "detailed_stats": parallel_stats,
         }
 
         # Print Score
@@ -481,16 +545,20 @@ class Benchmarker(object):
 
         if iterations is None or iterations < 1:
             self.log.warning(
-                "Detected invalid value for iterations '%r', replacing with 1.")
+                "Detected invalid value for iterations '%r', replacing with 1."
+            )
             iterations = 1
         self.log.debug(
-            "Starting Benchmarking Run in cwd '%s', changing to '%s'", old_cwd, self.BASE_WORK_DIR)
+            "Starting Benchmarking Run in cwd '%s', changing to '%s'",
+            old_cwd,
+            self.BASE_WORK_DIR,
+        )
 
         report = self._prepare_report()
         # Add all iterations to report
         report["start"] = datetime.datetime.now().isoformat()
         detected_failure = False
-        for iteration in range(1, iterations+1):
+        for iteration in range(1, iterations + 1):
             if self._run_iterations(report, iteration=iteration, lite=lite):
                 log.warning("Detected a failure in iteration %d", iteration)
                 detected_failure = True
@@ -514,37 +582,73 @@ class Benchmarker(object):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Run SpecSAT')
-    parser.add_argument('-d', '--debug', default=False,
-                        action='store_true', help='Log debug output')
-    parser.add_argument('-l', '--lite', default=False,
-                        action='store_true', help='Only run a single, easy, benchmark to test the setup')
-    parser.add_argument('-i', '--iterations', default=1, type=int,
-                        help='Re-run a run multiple times')
-    parser.add_argument('-n', '--nick-name', default=None,
-                        help='Add this name as nick-name to the report.')
-    parser.add_argument('-o', '--output', default=None,
-                        help='Write output to this file.')
-    parser.add_argument('-r', '--report', default=None,
-                        help='Write full report to this file, including raw data per benchmark.')
-    parser.add_argument('-v', '--version', default=False,
-                        action='store_true', help='Print version of the tool')
-    parser.add_argument('--verbosity', default=0, type=int,
-                        help='Set the verbosity level')
-    parser.add_argument('--work-dir', default="/dev/shm", type=str,
-                        help='Build and run tools in this directory')
+    parser = argparse.ArgumentParser(description="Run SpecSAT")
+    parser.add_argument(
+        "-d", "--debug", default=False, action="store_true", help="Log debug output"
+    )
+    parser.add_argument(
+        "-l",
+        "--lite",
+        default=False,
+        action="store_true",
+        help="Only run a single, easy, benchmark to test the setup",
+    )
+    parser.add_argument(
+        "-i", "--iterations", default=1, type=int, help="Re-run a run multiple times"
+    )
+    parser.add_argument(
+        "-n",
+        "--nick-name",
+        default=None,
+        help="Add this name as nick-name to the report.",
+    )
+    parser.add_argument(
+        "-o", "--output", default=None, help="Write output to this file."
+    )
+    parser.add_argument(
+        "-r",
+        "--report",
+        default=None,
+        help="Write full report to this file, including raw data per benchmark.",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        default=False,
+        action="store_true",
+        help="Print version of the tool",
+    )
+    parser.add_argument(
+        "--verbosity", default=0, type=int, help="Set the verbosity level"
+    )
+    parser.add_argument(
+        "--work-dir",
+        default="/dev/shm",
+        type=str,
+        help="Build and run tools in this directory",
+    )
 
-    parser.add_argument('--generator-cxx', default="g++",
-                        help='Use this compiler as CXX to compile the generator')
+    parser.add_argument(
+        "--generator-cxx",
+        default="g++",
+        help="Use this compiler as CXX to compile the generator",
+    )
 
-    parser.add_argument('--sat-commit', default="v3.1",
-                        help='Use this commit of the SAT solver')
-    parser.add_argument('--sat-compiler', default=None,
-                        help='Use this compiler as CXX')
-    parser.add_argument('--sat-compile-flags', default=None,
-                        help='Add this string to CXXFLAGS and LDFLAGS')
-    parser.add_argument('--sat-mode', default="release", choices=["release", "debug"],
-                        help='Use solver in release or debug mode')
+    parser.add_argument(
+        "--sat-commit", default="v3.2.0", help="Use this commit of the SAT solver"
+    )
+    parser.add_argument("--sat-compiler", default=None, help="Use this compiler as CXX")
+    parser.add_argument(
+        "--sat-compile-flags",
+        default=None,
+        help="Add this string to CXXFLAGS and LDFLAGS",
+    )
+    parser.add_argument(
+        "--sat-mode",
+        default="release",
+        choices=["release", "debug"],
+        help="Use solver in release or debug mode",
+    )
 
     args = parser.parse_args()
     return vars(args)
@@ -559,12 +663,12 @@ def write_report(report, args):
         output_report["nick_name"] = nick_name
     report_file = args.get("report")
     if report_file:
-        with open(report_file, 'w') as f:
+        with open(report_file, "w") as f:
             json.dump(output_report, f, indent=4, sort_keys=True)
     output_file = args.get("output")
     if output_file:
         output_report["SpecSAT"].pop("raw_runs")
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(report, f, indent=4, sort_keys=True)
 
 
@@ -572,11 +676,17 @@ def main():
     args = parse_args()
 
     if args.get("debug"):
-        logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-                            datefmt='%Y-%m-%d:%H:%M:%S', level=logging.DEBUG)
+        logging.basicConfig(
+            format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+            datefmt="%Y-%m-%d:%H:%M:%S",
+            level=logging.DEBUG,
+        )
     else:
-        logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s %(message)s',
-                            datefmt='%Y-%m-%d:%H:%M:%S', level=logging.INFO)
+        logging.basicConfig(
+            format="%(asctime)s,%(msecs)d %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%d:%H:%M:%S",
+            level=logging.INFO,
+        )
 
     if args.get("version"):
         print("Version: {}".format(VERSION))
@@ -587,21 +697,28 @@ def main():
     with pushd(args["work_dir"]):
         log.info("Building CNF generator")
         generator = CNFgenerator(cxx=args.get("generator_cxx"))
-        log.debug("Build generator '%s' with version '%s'",
-                  generator.get_name(), generator.get_version())
+        log.debug(
+            "Build generator '%s' with version '%s'",
+            generator.get_name(),
+            generator.get_version(),
+        )
 
         log.debug("Pre-SAT args: %r", args)
         log.info("Building SAT solver")
-        satsolver = SATsolver(compiler=args.get("sat_compiler"),
-                              compile_flags=args.get("sat_compile_flags"),
-                              commit=args.get("sat_commit"),
-                              mode=args.get("sat_mode"))
+        satsolver = SATsolver(
+            compiler=args.get("sat_compiler"),
+            compile_flags=args.get("sat_compile_flags"),
+            commit=args.get("sat_commit"),
+            mode=args.get("sat_mode"),
+        )
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(solver=satsolver, generator=generator)
-    report = benchmarker.run(iterations=args.get("iterations"),
-                             lite=args.get("lite", False),
-                             verbosity=args.get("verbosity"))
+    report = benchmarker.run(
+        iterations=args.get("iterations"),
+        lite=args.get("lite", False),
+        verbosity=args.get("verbosity"),
+    )
     write_report(report, args)
     log.info("Finished SpecSAT")
     return 0
