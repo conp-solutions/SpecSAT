@@ -1,0 +1,17 @@
+name: Check CHANGELOG being updated
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  Linux:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Check Changelog being rebased on origin/master
+      run: git merge-base --is-ancestor origin/master $(git log -n 1 --pretty=format:%H -- CHANGELOG)
