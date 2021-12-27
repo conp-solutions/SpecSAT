@@ -16,6 +16,8 @@ import sys
 import tarfile
 import tempfile
 
+from collections import defaultdict
+from statistics import variance
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -502,6 +504,9 @@ class Benchmarker(object):
             cores = run["cores"]["cores"]
             max_cores = cores if cores > max_cores else max_cores
         self.log.debug("Detected max cores %r", max_cores)
+
+        iteration_wall_runtimes = defaultdict(list)  # Collect all runtimes per run
+        iteration_cpu_runtimes = defaultdict(list)  # Collect all runtimes per run
         self.log.debug("Evaluating %d runs", len(report["raw_runs"]))
         for run in report["raw_runs"]:
             cores = run["cores"]["cores"]
@@ -517,6 +522,13 @@ class Benchmarker(object):
                     else 1
                 )
                 num_max_parallel_runs += 1
+            iteration_key = (
+                tuple(run["benchmark"]["parameter"]),
+                run["iteration"],
+                cores,
+            )
+            iteration_cpu_runtimes[iteration_key].append(run["cpu_time_s"])
+            iteration_wall_runtimes[iteration_key].append(run["wall_time_s"])
 
             parallel_stats[cores]["sum_max_parallel_wall"] += run["wall_time_s"]
             parallel_stats[cores]["sum_max_parallel_efficiency"] += (
@@ -526,11 +538,37 @@ class Benchmarker(object):
             )
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
+        # Get variance based on run with this highest sum of run times
+        max_iterations = 0
+        cpu_list = None
+        cpu_sum = 0
+        for item in iteration_cpu_runtimes.values():
+            max_iterations = max_iterations if max_iterations > len(item) else len(item)
+            item_sum = sum(item)
+            if cpu_list is None or item_sum > cpu_sum:
+                cpu_list = item
+                cpu_sum = item_sum
+        wall_list = None
+        wall_sum = 0
+        for item in iteration_cpu_runtimes.values():
+            item_sum = sum(item)
+            if wall_list is None or item_sum > wall_sum:
+                wall_list = item
+                wall_sum = item_sum
+        log.info("Detected %d iterations", max_iterations)
+        cpu_variance = variance(cpu_list)
+        wall_variance = variance(wall_list)
+
         log.debug(
             "Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
             sum_max_parallel_efficiency,
             num_max_parallel_runs,
             max_cores,
+        )
+        log.debug(
+            "Detected machine variance: %f cpu time, %f wall time",
+            cpu_variance,
+            wall_variance,
         )
         # Plain wait time to result, average via runs, so that multiple iterations still result in same score
         sequential_score = sum_sequential_wall / num_sequential_runs * 100
@@ -560,6 +598,9 @@ class Benchmarker(object):
             "score_efficiency": efficiency_score,
             "wall_time_sum_seq_s": sum_sequential_wall,
             "wall_time_sum_par_s": sum_max_parallel_wall,
+            "wall_time_variance": wall_variance,
+            "cpu_time_variance": cpu_variance,
+            "measurement_iterations": max_iterations,
             "efficiency_max_parallel_avg": sum_max_parallel_efficiency
             / num_max_parallel_runs
             if num_max_parallel_runs
@@ -573,6 +614,8 @@ class Benchmarker(object):
         print("Sequential Score:    {} (less is better)".format(sequential_score))
         print("Full Parallel Score: {} (less is better)".format(parallel_score))
         print("Efficiency Score:    {} (less is better)".format(efficiency_score))
+        print("Variance CPU time:   {} (less is better)".format(cpu_variance))
+        print("Variance wall time:  {} (less is better)".format(wall_variance))
 
     def run(self, iterations=1, lite=False, verbosity=0):
         old_cwd = os.getcwd()
