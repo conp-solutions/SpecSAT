@@ -7,4 +7,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+ * support using local tools (mainly for testing)
  * initial variant of the SpecSAT.py tool

@@ -100,18 +100,27 @@ class CNFgenerator(object):
     URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
     VERSION = "modularityGen_v2.1"
 
-    def __init__(self, cxx="g++"):
+    def __init__(self, cxx="g++", tool_location=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.solver = None
         self.workdir = tempfile.TemporaryDirectory(
             prefix="specsat_solver", dir=os.getcwd()
         )
         self.sourcefile = os.path.join(self.workdir.name, "modularityGen_v2.1.cpp")
-        self.generator = os.path.join(self.workdir.name, self.NAME)
-        self.log.debug("Get generator with workdir '%s'", self.workdir.name)
-        self._get_generator()
-        self.log.debug("Build generator with workdir '%s'", self.workdir.name)
-        self._build_generator(cxx=cxx)
+        if tool_location is None:
+            self.generator = os.path.join(self.workdir.name, self.NAME)
+            self.log.debug("Get generator with workdir '%s'", self.workdir.name)
+            self._get_generator()
+            self.log.debug("Build generator with workdir '%s'", self.workdir.name)
+            self._build_generator(cxx=cxx)
+        else:
+            if not os.path.isfile(tool_location) and os.access(tool_location, os.X_OK):
+                error = f"Provided generator tool '{tool_location}' is not executable, aborting"
+                log.error(error)
+                raise ValueError(error)
+            log.info("Using user provided modgen tool, results might differ!")
+            self.generator = os.path.realpath(tool_location)
+            self.VERSION = "<UserProvided>"
 
     def _get_generator(self):
         self.log.debug("Downloading '%s' from '%s'", self.NAME, self.URL)
@@ -157,10 +166,16 @@ class CNFgenerator(object):
 class SATsolver(object):
     NAME = "mergesat"
     REPO = "https://github.com/conp-solutions/mergesat.git"
-    COMMIT = "306d2e8ef9733291acd6a07716c6158546a1c8d5"
     SOLVER_PARAMETER = ["-no-diversify"]
 
-    def __init__(self, compiler=None, compile_flags=None, commit=None, mode=None):
+    def __init__(
+        self,
+        compiler=None,
+        compile_flags=None,
+        commit=None,
+        mode=None,
+        solver_location=None,
+    ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
         self.mode = "debug" if mode == "debug" else "release"
@@ -169,17 +184,30 @@ class SATsolver(object):
         self.workdir = tempfile.TemporaryDirectory(
             prefix="specsat_solver", dir=os.getcwd()
         )
-        self.solverdir = os.path.join(self.workdir.name, self.NAME)
-        self.log.debug("Run solver with workdir '%s'", self.workdir.name)
 
-        self._get_solver(self.solverdir, commit=commit)
-        self.log.info(
-            "Retrieved solver '%s' with version '%s'", self.NAME, self._get_version()
-        )
-        self.binary = ["build", self.mode, "bin", "mergesat"]
-        self._build_solver(compiler=compiler, compile_flags=compile_flags)
+        if solver_location is None:
+            self.solverdir = os.path.join(self.workdir.name, self.NAME)
+            self.log.debug("Run solver with workdir '%s'", self.workdir.name)
+            self._get_solver(self.solverdir, commit=commit)
+            self.log.info(
+                "Retrieved solver '%s' with version '%s'",
+                self.NAME,
+                self._get_version(),
+            )
+            self.binary = ["build", self.mode, "bin", "mergesat"]
+            self._build_solver(compiler=compiler, compile_flags=compile_flags)
+            assert self.build_command != None
+        else:
+            self.solverdir = None
+            if not os.path.isfile(solver_location) and os.access(
+                solver_location, os.X_OK
+            ):
+                error = f"Provided SAT solver '{solver_location}' is not executable, aborting"
+                log.error(error)
+                raise ValueError(error)
+            log.info("Using user provided SAT solver, results might differ!")
+            self.solver = os.path.realpath(solver_location)
         assert self.solver != None
-        assert self.build_command != None
 
     def _get_solver(self, directory, commit=None):
         self.log.debug("get solver: %r", locals())
@@ -212,6 +240,8 @@ class SATsolver(object):
         self.solver = os.path.join(self.solverdir, *self.binary)
 
     def _get_version(self):
+        if self.solverdir is None:
+            return "<UserProvided>"
         if self.version is None:
             version_call = ["git", "describe"]
             self.log.debug("Get solver version with: %r", version_call)
@@ -275,20 +305,21 @@ class SATsolver(object):
 class Benchmarker(object):
     BASE_WORK_DIR = "/dev/shm"  # For now, support Linux
 
-    def __init__(self, solver, generator):
+    def __init__(self, solver, generator, used_user_tools):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.debug("Get SAT Solver")
         self.solver = solver
         self.generator = generator
         self.relevant_cores = None
         self.fail_early = False
+        self.used_user_tools = used_user_tools
 
     def _prepare_report(self):
         report = {}
         report["raw_runs"] = []
         report["failed_runs"] = 0
 
-        self.log.debug("Get CNF Generator")
+        self.log.debug("Preparing report with tool and host info")
 
         report["generator"] = {
             "name": self.generator.get_name(),
@@ -302,6 +333,7 @@ class Benchmarker(object):
         }
         report["hostinfo"] = get_host_info()
         report["relevant_cores"] = self._detect_cores()
+        report["non_default_tools"] = self.used_user_tools
         return report
 
     def _get_benchmarks(self, only_one=False):
@@ -536,6 +568,8 @@ class Benchmarker(object):
         }
 
         # Print Score
+        if self.used_user_tools:
+            print("!!!  Attention: non-default tools have been used  !!!")
         print("Sequential Score:    {} (less is better)".format(sequential_score))
         print("Full Parallel Score: {} (less is better)".format(parallel_score))
         print("Efficiency Score:    {} (less is better)".format(efficiency_score))
@@ -633,6 +667,13 @@ def parse_args():
         default="g++",
         help="Use this compiler as CXX to compile the generator",
     )
+    parser.add_argument(
+        "-G",
+        "--generator-location",
+        default=None,
+        type=str,
+        help="Location of modgen tool to be used",
+    )
 
     parser.add_argument(
         "--sat-commit", default="v3.2.0", help="Use this commit of the SAT solver"
@@ -648,6 +689,13 @@ def parse_args():
         default="release",
         choices=["release", "debug"],
         help="Use solver in release or debug mode",
+    )
+    parser.add_argument(
+        "-S",
+        "--solver-location",
+        default=None,
+        type=str,
+        help="Location of SAT solver to be used",
     )
 
     args = parser.parse_args()
@@ -672,6 +720,47 @@ def write_report(report, args):
             json.dump(report, f, indent=4, sort_keys=True)
 
 
+def build_tools(args):
+    """Build required tools, report whether user provided tools have been used."""
+    generator_location = args.get("generator_location")
+    generator_location = (
+        generator_location
+        if generator_location is None
+        else os.path.realpath(generator_location)
+    )
+    solver_location = args.get("solver_location")
+    solver_location = (
+        solver_location
+        if solver_location is None
+        else os.path.realpath(solver_location)
+    )
+    with pushd(args["work_dir"]):
+        log.info("Building CNF generator")
+        generator = CNFgenerator(
+            cxx=args.get("generator_cxx"), tool_location=generator_location
+        )
+        log.debug(
+            "Build generator '%s' with version '%s'",
+            generator.get_name(),
+            generator.get_version(),
+        )
+
+        log.debug("Pre-SAT args: %r", args)
+        log.info("Building SAT solver")
+        satsolver = SATsolver(
+            compiler=args.get("sat_compiler"),
+            compile_flags=args.get("sat_compile_flags"),
+            commit=args.get("sat_commit"),
+            mode=args.get("sat_mode"),
+            solver_location=solver_location,
+        )
+    return (
+        satsolver,
+        generator,
+        generator_location is not None or solver_location is not None,
+    )
+
+
 def main():
     args = parse_args()
 
@@ -694,26 +783,12 @@ def main():
 
     log.info("SpecSAT 2021, version %s", VERSION)
 
-    with pushd(args["work_dir"]):
-        log.info("Building CNF generator")
-        generator = CNFgenerator(cxx=args.get("generator_cxx"))
-        log.debug(
-            "Build generator '%s' with version '%s'",
-            generator.get_name(),
-            generator.get_version(),
-        )
-
-        log.debug("Pre-SAT args: %r", args)
-        log.info("Building SAT solver")
-        satsolver = SATsolver(
-            compiler=args.get("sat_compiler"),
-            compile_flags=args.get("sat_compile_flags"),
-            commit=args.get("sat_commit"),
-            mode=args.get("sat_mode"),
-        )
+    satsolver, generator, used_user_tools = build_tools(args)
 
     log.debug("Starting benchmarking with args: %r", args)
-    benchmarker = Benchmarker(solver=satsolver, generator=generator)
+    benchmarker = Benchmarker(
+        solver=satsolver, generator=generator, used_user_tools=used_user_tools
+    )
     report = benchmarker.run(
         iterations=args.get("iterations"),
         lite=args.get("lite", False),
