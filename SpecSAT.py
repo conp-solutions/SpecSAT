@@ -561,8 +561,8 @@ class Benchmarker(object):
                 wall_list = item
                 wall_sum = item_sum
         log.info("Detected %d iterations", max_iterations)
-        cpu_variance = variance(cpu_list)
-        wall_variance = variance(wall_list)
+        cpu_variance = 0 if len(cpu_list) <= 1 else variance(cpu_list)
+        wall_variance = 0 if len(wall_list) <= 1 else variance(wall_list)
 
         log.debug(
             "Detected parallel values: sum_efficiency: %r parallel runs: %r max_cores: %r",
@@ -639,6 +639,7 @@ class Benchmarker(object):
         report = self._prepare_report()
         # Add all iterations to report
         report["start"] = datetime.datetime.now().isoformat()
+        report["lite_variant"] = lite
         detected_failure = False
         for iteration in range(1, iterations + 1):
             if self._run_iterations(report, iteration=iteration, lite=lite):
