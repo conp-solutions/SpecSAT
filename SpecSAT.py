@@ -539,6 +539,8 @@ class Benchmarker(object):
             )
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
+        log.debug("Parallel stats: %r", parallel_stats)
+
         # Get variance based on run with this highest sum of run times
         max_iterations = 0
         cpu_list = None
@@ -666,6 +668,13 @@ def parse_args():
         "-d", "--debug", default=False, action="store_true", help="Log debug output"
     )
     parser.add_argument(
+        "-A",
+        "--auto-archive-report",
+        default=None,
+        type=str,
+        help="Provide hint to use when storing the report of this run as part of the archive",
+    )
+    parser.add_argument(
         "-l",
         "--lite",
         default=False,
@@ -759,9 +768,58 @@ def write_report(report, args):
         with open(report_file, "w") as f:
             json.dump(output_report, f, indent=4, sort_keys=True)
     output_file = args.get("output")
+    output_report["SpecSAT"].pop("raw_runs")
     if output_file:
-        output_report["SpecSAT"].pop("raw_runs")
         with open(output_file, "w") as f:
+            json.dump(report, f, indent=4, sort_keys=True)
+
+    auto_archive_hint = args.get("auto_archive_report")
+    if auto_archive_hint is not None:
+        log.debug("Auto archiving report with hint '%s'", auto_archive_hint)
+        hostinfo = get_host_info()
+        # Generate file directory and name based on host details
+        archive_dir_list = [
+            x.replace(" ", "_")
+            for x in [
+                "archive",
+                VERSION,
+                hostinfo["cpu_info"]["brand_raw"],
+                hostinfo["platform"],
+            ]
+        ]
+        archive_dir = os.path.join(*archive_dir_list)
+        lite = "lite" if output_report["SpecSAT"].get("lite_variant", False) else "full"
+        valid_tools = (
+            "customized"
+            if output_report["SpecSAT"]["non_default_tools"]
+            else "standard"
+        )
+        archive_base_list = (
+            [lite, valid_tools, auto_archive_hint]
+            if auto_archive_hint
+            else [lite, valid_tools]
+        )
+        archive_base = "_".join(archive_base_list)
+        archive_base_name = "{}.json".format(archive_base)
+        log.debug("Attempting to store archive with base name '%s'", archive_base_name)
+        target_name = os.path.join(archive_dir, archive_base_name)
+        # Create output directory, if it does not exist yet
+        if not os.path.exists(archive_dir):
+            os.makedirs(archive_dir)
+        # Check whether file already exists, else use temporary file name with prefix)
+        if os.path.exists(target_name):
+            new_target_name = tempfile.NamedTemporaryFile(
+                dir=archive_dir, delete=False, prefix=archive_base, suffix=".json"
+            ).name
+            log.warning(
+                "Target archive path '%s' already exists, using a temporary file name: '%s'",
+                target_name,
+                new_target_name,
+            )
+            target_name = new_target_name
+        # Write report to the archive file
+        log.info("Writing archive to '%s'", target_name)
+        with open(target_name, "w") as f:
             json.dump(report, f, indent=4, sort_keys=True)
 
 
