@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import copy
+import cpuinfo
 import datetime
 import json
 import logging
@@ -71,13 +72,17 @@ def get_host_info():
     # CPUs (logical, physical, caches, model itendifier)
     # memory (size, type, model itendifier, TLB status)
     svmem = psutil.virtual_memory()
+
     return {
         "cpus_physical": psutil.cpu_count(),
         "cpus_logical": psutil.cpu_count(logical=False),
+        "cpu_info": cpuinfo.get_cpu_info(),
         "platform_system": platform.system(),
+        "platform": platform.platform(),
         "platform_processor": platform.processor(),
         "platform_version": platform.version(),
         "platform_release": platform.release(),
+        "machine": platform.machine(),
         "memory_total": svmem.total,
         "memory_available": svmem.available,
         "memory_thp_status": get_thp_status(),

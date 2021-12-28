@@ -7,5 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+ * extend available info with cpuinfo
  * support using local tools (mainly for testing)
  * initial variant of the SpecSAT.py tool
