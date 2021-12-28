@@ -1,0 +1,21 @@
+name: Run Bash script on Linux
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  Linux:
+
+    runs-on: ubuntu-18.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-venv sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: Run CI script
+      run: ./SpecSAT.sh -d -A ""
+
