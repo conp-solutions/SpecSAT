@@ -343,6 +343,7 @@ class Benchmarker(object):
         report["hostinfo"] = get_host_info()
         report["relevant_cores"] = self._detect_cores()
         report["non_default_tools"] = self.used_user_tools
+        report["specsat_version"] = VERSION
         return report
 
     def _get_benchmarks(self, only_one=False):
