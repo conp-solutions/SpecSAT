@@ -14,4 +14,4 @@ jobs:
     - uses: actions/checkout@v1
 
     - name: Check Changelog being rebased on origin/master
-      run: git merge-base --is-ancestor origin/master $(git log -n 1 --pretty=format:%H -- CHANGELOG)
+      run: git merge-base --is-ancestor origin/main $(git log -n 1 --pretty=format:%H -- CHANGELOG)
