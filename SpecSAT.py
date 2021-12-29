@@ -25,6 +25,10 @@ from statistics import variance
 # Create logger
 log = logging.getLogger(__name__)
 
+FAST_WORK_DIR = tempfile.TemporaryDirectory(
+    dir=None if sys.platform == "darwin" else "/dev/shm"
+)
+FAST_WORK_DIR_NAME = FAST_WORK_DIR.name
 VERSION = "0.0.1"  # Version of this tool
 
 
@@ -312,7 +316,7 @@ class SATsolver(object):
 
 
 class Benchmarker(object):
-    BASE_WORK_DIR = "/dev/shm"  # For now, support Linux
+    BASE_WORK_DIR = FAST_WORK_DIR_NAME
 
     def __init__(self, solver, generator, used_user_tools):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -714,7 +718,7 @@ def parse_args():
     )
     parser.add_argument(
         "--work-dir",
-        default="/dev/shm",
+        default=FAST_WORK_DIR_NAME,
         type=str,
         help="Build and run tools in this directory",
     )
