@@ -547,6 +547,24 @@ class Benchmarker(object):
             parallel_stats[cores]["num_max_parallel_runs"] += 1
 
         log.debug("Parallel stats: %r", parallel_stats)
+        physical_cores = psutil.cpu_count(logical=False)
+        half_cores = psutil.cpu_count(logical=False) // 2
+        half_core_efficiency_factor = (
+            (
+                parallel_stats[half_cores]["sum_max_parallel_efficiency"]
+                / parallel_stats[physical_cores]["sum_max_parallel_efficiency"]
+                if parallel_stats[physical_cores]["sum_max_parallel_efficiency"]
+                else 1
+            )
+            if half_cores in parallel_stats and half_cores != 1
+            else 1
+        )
+        log.debug(
+            "Use half cores %d and physical cores %d for half_core_efficiency_factor %f",
+            half_cores,
+            physical_cores,
+            half_core_efficiency_factor,
+        )
 
         # Get variance based on run with this highest sum of run times
         max_iterations = 0
@@ -606,6 +624,7 @@ class Benchmarker(object):
             "score_sequential": sequential_score,
             "score_full_parallel": parallel_score,
             "score_efficiency": efficiency_score,
+            "half_core_efficiency_factor": half_core_efficiency_factor,
             "wall_time_sum_seq_s": sum_sequential_wall,
             "wall_time_sum_par_s": sum_max_parallel_wall,
             "wall_time_variance": wall_variance,
@@ -624,6 +643,11 @@ class Benchmarker(object):
         print("Sequential Score:    {} (less is better)".format(sequential_score))
         print("Full Parallel Score: {} (less is better)".format(parallel_score))
         print("Efficiency Score:    {} (less is better)".format(efficiency_score))
+        print(
+            "Half core factor:    {} (less is better)".format(
+                half_core_efficiency_factor
+            )
+        )
         print("Variance CPU time:   {} (less is better)".format(cpu_variance))
         print("Variance wall time:  {} (less is better)".format(wall_variance))
 
