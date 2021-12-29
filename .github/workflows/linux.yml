@@ -17,7 +17,7 @@ jobs:
     - uses: actions/checkout@v1
 
     - name: get python modules
-      run: pip3 install psutil requests --upgrade --user -U
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
 
     - name: run CI script
       run: ./SpecSAT.py -d
