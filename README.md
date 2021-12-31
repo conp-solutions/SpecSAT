@@ -8,6 +8,13 @@ The goal of SpecSAT is to understand how well a SAT solver performs on a given
 hardware platform. This is done be running a fixed SAT solver on a fixed set
 of benchmark formulas, and measuring the wall clock time this computation takes.
 
+Besides benchmarking hardware configuration, also other features of the platform
+or even the solver implementation can be benchmarked. An example list of
+features is using "huge pages" for memory management, using the prefetching unit
+of the CPU, using different compilation flags, or even use different layout of
+the data structures within the SAT solver (without influencing its search
+steps).
+
 As parallel SAT solvers allow to run different solving configurations in
 parallel, we also measure how well a parallel solver performs on the given
 architecture - both when using the number of all CPUS, as well as using only
