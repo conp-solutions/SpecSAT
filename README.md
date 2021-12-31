@@ -89,6 +89,58 @@ SpecSAT is implemented under the MIT license. The used SAT solver `MergeSat`
 also uses the MIT license. The benchmark generation tool `modgen` is distributed
 via the GPL license. Please make sure these licenses fit your use case.
 
+## Calculated Scores
+
+The score for the hardware is computed based on the wall clock time it takes to
+solve the predefined benchmarks. To compute the efficiency of the hardware with
+respect to parallel SAT solving, the CPU time is also considered. For the
+benchmark with the highest computation time, also the variance is computed.
+Using multiple iterations of measurements is supported, and allows to reduce the
+variance of the obtained data points.
+
+### Score_Sequential
+
+This score scales linear with the wall clock time of the sequential solving. The
+smaller the obtained number, the better the platform is for sequential SAT
+solving.
+
+### Score_Full_Parallel
+
+This score scales linear with the wall clock time of the parallel solving, when
+using all available cores of the platform. The smaller the number, the better
+the given platform is for parallel SAT solving.
+
+Note: there is no linear relation between sequential and parallel score, as the
+performed search steps are different.
+
+### Score_Efficiency
+
+This score takes the efficiency of the platform into account, and shows whether
+there is potential room for improvement. In case the solver runs as efficient
+as possible (efficiency = 1), the score_efficiency value is equal to the
+Score__Full_Parallel value. The score decreases linear to the double of this
+score depending on the measured efficiency of the solver when using all cores,
+i.e.:
+
+```
+ efficiency_score = score_full_parallel * (2 - efficiency)
+```
+
+### Half_Core_Efficiency_Factor
+
+SAT solvers are assumed to be bound by the memory bandwidth. When using all
+cores of the platform, the available memory bandwidth per used core should be
+lower compared to using only every second core.
+
+This score hence is the ratio of the measured efficiency of the solver when
+using half of the available cores vs using all cores, i.e.:
+
+```
+half_core_efficiency_factor = efficiency(n/2) / efficiency(n),
+```
+
+where `n` is the number of available cores.
+
 ## Contributing Report Data
 
 Data about different hosts can be stored automatically as part of the repository

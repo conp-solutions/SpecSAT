@@ -606,10 +606,8 @@ class Benchmarker(object):
         )
         # With higher efficiency per core, we get better. Hence, use efficiency to limit factor.
         # TODO: instead of (2-x), should this be (1/x) ?
-        efficiency_score = (
-            sum_max_parallel_wall
-            / (num_max_parallel_runs * max_cores)
-            * (2 - (sum_max_parallel_efficiency / num_max_parallel_runs))
+        efficiency_score = parallel_score * (
+            2 - (sum_max_parallel_efficiency / num_max_parallel_runs)
         )
         # TODO: evaluate efficiency between highest three core numbers, take 'logical' into account
         log.debug(
