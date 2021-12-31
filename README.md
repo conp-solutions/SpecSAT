@@ -57,6 +57,31 @@ consider running SpecSAT in a virtual environment, e.g. venv. If you do not
 want to maintain this venv separately, the script `SpecSAT.sh` will take care
 of the extra steps automatically.
 
+## Internals
+
+The SpecSAT tool uses the SAT solver `MergeSat` as a SAT backend to perform
+measurements. The input problems to be solved are generated with the tool
+`modgen`. Both tools are considered state-of-the-art tools, so that using them
+for measurements provides meaningful results.
+
+The generated benchmarks are large enough to represent currently challenging
+input sizes for a SAT solver. `MergeSat` can solve input by using multiple
+compute resources. This parallel solving is implemented in a deterministic way.
+For measurements, this configuration allows to re-run the parallel solving with
+the exact same algorithmic steps.
+
+To make sure the expected results are obtained, the output of the sequential
+solving process is validated against the known number of search conflicts the
+SAT solver will produce when solving a given formula. For the parallel search,
+no such expectation is used, as the number of generated conflicts also depends
+on the number of used cores.
+
+### Licensing
+
+SpecSAT is implemented under the MIT license. The used SAT solver `MergeSat`
+also uses the MIT license. The benchmark generation tool `modgen` is distributed
+via the GPL license. Please make sure these licenses fit your use case.
+
 ## Contributing Report Data
 
 Data about different hosts can be stored automatically as part of the repository
@@ -73,3 +98,5 @@ Note: the report is supposed to not contain any personal data. However, before
  3. add the new report file to the branch
  4. create a pull request in the main repository with your change
 
+When contributing data to the SpecSAT repository, make sure you provide your
+change with the MIT license.
