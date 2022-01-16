@@ -49,6 +49,27 @@ the native results can be stored:
 ./SpecSAT.py -r full-report.json -o output.json
 ```
 
+### Wrapper Script Extensions
+
+To not bother with setting up the environment, a convenience wrapper is
+provided. This wrapper takes care of setting up the dependencies in a virtual
+environment (via venv). Furthermore, the wrapper supports two command line
+parameters:
+
+```
+    <some_path>/SpecSAT.sh --run-from-install [args]
+```
+
+... will run SpecSAT.py with args `args` in the directory where the tool itself
+is located. This allows to use the tool in e.g. a distributed environment.
+
+```
+    <some_path>/SpecSAT.sh --force-install [args]
+```
+
+... will run the wrapper, and re-install the python dependencies. This command
+is only required, in case the python dependencies change.
+
 ## Dependencies
 
 To execute SpecSAT, non-default python packages need to be installed. The list

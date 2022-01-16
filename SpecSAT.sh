@@ -6,10 +6,9 @@
 # virtual environment, to keep python dependencies
 # isolated from the system Python installation.
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" &>/dev/null && pwd)"
 declare -r SCRIPT_DIR
-VENV_DIR="$SCRIPT_DIR"/.SpecSATvenv
-declare -r VENV_DIR
+FORCE_INSTALL="false"
 
 # Install error handler, which will act like 'set -e', but print a message
 error_handler() {
@@ -37,16 +36,38 @@ execute_silently() {
     fi
 }
 
+# Hidden command line options
+RUN_DIR="$PWD"
+if [ "${1:-}" = "--run-from-install" ]; then
+    RUN_DIR="$SCRIPT_DIR"
+    shift
+fi
+
+if [ "${1:-}" = "--force-install" ]; then
+    FORCE_INSTALL="true"
+    shift
+fi
+
+VENV_DIR="$RUN_DIR"/.SpecSATvenv
+declare -r VENV_DIR
+
 # Create virtual environment once
 if [ ! -d "$VENV_DIR" ]; then
     execute_silently python3 -m venv "$VENV_DIR"
+    # Activate virtual environment
+    source "$VENV_DIR"/bin/activate
+
+    # Install dependencies (for user)
+    execute_silently python3 -m pip install --upgrade -U -r "$SCRIPT_DIR"/requirements.txt
+else
+    # Activate virtual environment
+    source "$VENV_DIR"/bin/activate
 fi
 
-# Activate virtual environment
-source "$VENV_DIR"/bin/activate
-
-# Install dependencies (for user)
-execute_silently python3 -m pip install --upgrade -U -r requirements.txt
+if [ "$FORCE_INSTALL" = "true" ]; then
+    # Install dependencies (for user)
+    execute_silently python3 -m pip install --upgrade -U -r "$SCRIPT_DIR"/requirements.txt
+fi
 
 # Actually execute SpecSAT
 declare -i STATUS=0
