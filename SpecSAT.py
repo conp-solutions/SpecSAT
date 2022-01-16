@@ -29,7 +29,7 @@ FAST_WORK_DIR = tempfile.TemporaryDirectory(
     dir=None if sys.platform == "darwin" else "/dev/shm"
 )
 FAST_WORK_DIR_NAME = FAST_WORK_DIR.name
-VERSION = "0.0.1"  # Version of this tool
+VERSION = "0.0.3"  # Version of this tool
 
 
 def get_thp_status():
