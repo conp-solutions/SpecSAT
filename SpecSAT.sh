@@ -6,10 +6,8 @@
 # virtual environment, to keep python dependencies
 # isolated from the system Python installation.
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" &>/dev/null && pwd)"
 declare -r SCRIPT_DIR
-VENV_DIR="$SCRIPT_DIR"/.SpecSATvenv
-declare -r VENV_DIR
 
 # Install error handler, which will act like 'set -e', but print a message
 error_handler() {
@@ -37,6 +35,16 @@ execute_silently() {
     fi
 }
 
+RUN_DIR="$PWD"
+if [ "${1:-}" = "--run-from-install" ]; then
+    RUN_DIR="$SCRIPT_DIR"
+    shift
+fi
+
+
+VENV_DIR="$RUN_DIR"/.SpecSATvenv
+declare -r VENV_DIR
+
 # Create virtual environment once
 if [ ! -d "$VENV_DIR" ]; then
     execute_silently python3 -m venv "$VENV_DIR"
@@ -46,7 +54,7 @@ fi
 source "$VENV_DIR"/bin/activate
 
 # Install dependencies (for user)
-execute_silently python3 -m pip install --upgrade -U -r requirements.txt
+execute_silently python3 -m pip install --upgrade -U -r "$SCRIPT_DIR"/requirements.txt
 
 # Actually execute SpecSAT
 declare -i STATUS=0
