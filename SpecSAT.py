@@ -318,7 +318,7 @@ class SATsolver(object):
 class Benchmarker(object):
     BASE_WORK_DIR = FAST_WORK_DIR_NAME
 
-    def __init__(self, solver, generator, used_user_tools):
+    def __init__(self, solver, generator, used_user_tools, dump_dir=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.debug("Get SAT Solver")
         self.solver = solver
@@ -326,6 +326,12 @@ class Benchmarker(object):
         self.relevant_cores = None
         self.fail_early = False
         self.used_user_tools = used_user_tools
+        self.dump_dir = dump_dir
+        if self.dump_dir:
+            self.dump_dir = os.path.realpath(self.dump_dir)
+            if not os.path.exists(self.dump_dir):
+                log.info("Creating output dump dir '%s'", self.dump_dir)
+                os.makedirs(self.dump_dir)
 
     def _prepare_report(self):
         report = {}
@@ -493,6 +499,16 @@ class Benchmarker(object):
                         cores,
                         solve_result,
                     )
+                    if self.dump_dir is not None:
+                        benchname = "".join(benchmark["parameter"])
+                        dst = os.path.join(
+                            self.dump_dir,
+                            "output_{}_cores{}_bench.log".format(
+                                iteration, cores, benchname
+                            ),
+                        )
+                        log.debug("Storing solver output in file '%s'", dst)
+                        shutil.copy2(output_path, dst)
         return detected_failure
 
     def _generate_summary(self, report):
@@ -702,6 +718,13 @@ def parse_args():
         default=None,
         type=str,
         help="Provide hint to use when storing the report of this run as part of the archive",
+    )
+    parser.add_argument(
+        "-D",
+        "--dump-dir",
+        default=None,
+        type=str,
+        help="Write all solver output to the given directory",
     )
     parser.add_argument(
         "-l",
@@ -919,7 +942,10 @@ def main():
 
     log.debug("Starting benchmarking with args: %r", args)
     benchmarker = Benchmarker(
-        solver=satsolver, generator=generator, used_user_tools=used_user_tools
+        solver=satsolver,
+        generator=generator,
+        used_user_tools=used_user_tools,
+        dump_dir=args.get("dump_dir"),
     )
     report = benchmarker.run(
         iterations=args.get("iterations"),
