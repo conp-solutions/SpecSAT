@@ -503,7 +503,7 @@ class Benchmarker(object):
                         benchname = "".join(benchmark["parameter"])
                         dst = os.path.join(
                             self.dump_dir,
-                            "output_{}_cores{}_bench.log".format(
+                            "output_{}_cores{}_bench{}.log".format(
                                 iteration, cores, benchname
                             ),
                         )
