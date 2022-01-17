@@ -30,6 +30,7 @@ FAST_WORK_DIR = tempfile.TemporaryDirectory(
 )
 FAST_WORK_DIR_NAME = FAST_WORK_DIR.name
 VERSION = "0.0.3"  # Version of this tool
+ZIP_BSAE_DIRNAME = "SpecSAT_data"
 
 
 def get_thp_status():
@@ -767,6 +768,13 @@ def parse_args():
         type=str,
         help="Build and run tools in this directory",
     )
+    parser.add_argument(
+        "-Z",
+        "--zip",
+        default=None,
+        type=str,
+        help="Zip full output into the given file",
+    )
 
     parser.add_argument(
         "--generator-cxx",
@@ -808,23 +816,34 @@ def parse_args():
     return vars(args)
 
 
-def write_report(report, args):
+def write_report(report, args, tarxzdump):
     """Write output files based on args."""
     nick_name = args.get("nick_name")
     output_report = copy.deepcopy(report)
     output_report["SpecSAT"]["cli_args"] = args
+    # Add nickname field to report
     if nick_name:
         output_report["nick_name"] = nick_name
+
+    # Write generic report
     report_file = args.get("report")
     if report_file:
         with open(report_file, "w") as f:
             json.dump(output_report, f, indent=4, sort_keys=True)
+
+    # Write full report to zip_dir
+    if tarxzdump.dir():
+        with open(os.path.join(tarxzdump.dir(), "full_report.json"), "w") as f:
+            json.dump(output_report, f, indent=4, sort_keys=True)
+
+    # Write output file
     output_file = args.get("output")
     output_report["SpecSAT"].pop("raw_runs")
     if output_file:
         with open(output_file, "w") as f:
             json.dump(report, f, indent=4, sort_keys=True)
 
+    # Automatically create archivable report based on host info
     auto_archive_hint = args.get("auto_archive_report")
     if auto_archive_hint is not None:
         log.debug("Auto archiving report with hint '%s'", auto_archive_hint)
@@ -916,6 +935,75 @@ def build_tools(args):
     )
 
 
+class TarXZDump(object):
+    """Support compressing a directory, which can be filled during the life time of this object."""
+
+    def __init__(self, zip_output=None):
+        self.zip_output = zip_output
+        self.fileHandler = None
+        self.zip_tmp_dir = None
+        self.zip_dir = None
+        if not zip_output:
+            return None
+        self._init_data()
+
+    def _init_data(self):
+        """Setup directory to store files to be zipped later. Also, add log handler."""
+        log.debug("Detected ZIP file to write to: '%s'", self.zip_output)
+        # add log handler and store in file
+        self.zip_tmp_dir = tempfile.TemporaryDirectory(prefix="SpecSat_zip")
+        self.zip_dir = os.path.join(self.zip_tmp_dir.name, ZIP_BSAE_DIRNAME)
+        os.mkdir(self.zip_dir)
+        log.debug("Write output for zipping into directory '%s'", self.zip_dir)
+        # Also collect logging
+
+        logFormatter = logging.Formatter(
+            "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+        )
+        self.fileHandler = logging.FileHandler(os.path.join(self.zip_dir, "output.log"))
+        self.fileHandler.setFormatter(logFormatter)
+        self.fileHandler.setLevel(logging.DEBUG)
+        logging.getLogger().addHandler(self.fileHandler)
+
+    def _tear_down(self):
+        """Make object unusable."""
+        self.zip_dir = None
+
+    def dir(self):
+        """Dreturn name of the directory we will zip later."""
+        return self.zip_dir
+
+    def finalie_tarxz(self):
+        """Compress the data of the directory."""
+
+        if not self.zip_dir:
+            return
+
+        name = os.path.basename(self.zip_dir)
+        zipname = (
+            self.zip_output
+            if self.zip_output.endswith("tar.xz")
+            else f"{self.zip_output}tar.xz"
+        )
+        log.info("Creating ZIP file with dump: '%s'", zipname)
+        zipname = os.path.realpath(zipname)
+
+        # Make sure the files we zip have all content
+        self.fileHandler.flush()
+
+        # Finally, create the archive file
+        pwd = os.getcwd()
+        os.chdir(os.path.join(self.zip_dir, os.pardir))
+        log.debug("Change to directory '%s' for compression", os.getcwd())
+        outfile = tarfile.open(zipname, "w:xz")
+        log.debug("Add directory '%s' to dump", name)
+        outfile.add(name)
+        outfile.close()
+        os.chdir(pwd)
+        log.debug("Change back to directory '%s' after compression", os.getcwd())
+        self._tear_down()
+
+
 def main():
     args = parse_args()
 
@@ -936,23 +1024,32 @@ def main():
         print("Version: {}".format(VERSION))
         return 0
 
+    # prepare storing all data in a zip file
+    zipdump = TarXZDump(args.get("zip"))
+
     log.info("SpecSAT 2021, version %s", VERSION)
 
     satsolver, generator, used_user_tools = build_tools(args)
 
     log.debug("Starting benchmarking with args: %r", args)
+    output_dir = args.get("dump_dir")
+    output_dir = output_dir if output_dir is not None else zipdump.dir()
     benchmarker = Benchmarker(
         solver=satsolver,
         generator=generator,
         used_user_tools=used_user_tools,
-        dump_dir=args.get("dump_dir"),
+        dump_dir=output_dir,
     )
+    if zipdump.dir() is not None and zipdump.dir() != output_dir:
+        shutil.copytree(output_dir, zipdump.dir(), dirs_exist_ok=True)
     report = benchmarker.run(
         iterations=args.get("iterations"),
         lite=args.get("lite", False),
         verbosity=args.get("verbosity"),
     )
-    write_report(report, args)
+    write_report(report, args, tarxzdump=zipdump)
+    zipdump.finalie_tarxz()
+
     log.info("Finished SpecSAT")
     return 0
 
