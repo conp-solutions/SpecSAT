@@ -463,6 +463,7 @@ class Benchmarker(object):
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
+                    solve_result["validated"] = None
                     if cores == 1:
                         if not self.solver.validate_conflicts(
                             benchmark.get("expected_sequential_conflicts"),
@@ -471,8 +472,6 @@ class Benchmarker(object):
                         ):
                             detected_failure = True
                             solve_result["validated"] = False
-                        else:
-                            solve_result["validated"] = None
                     solve_result["iteration"] = iteration
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
@@ -490,6 +489,7 @@ class Benchmarker(object):
                         )
                         detected_failure = True
                         okay_run = False
+                    if detected_failure:
                         report["failed_runs"] += 1
                     solve_result["okay"] = okay_run
                     solve_result["benchmark"] = benchmark
@@ -705,7 +705,7 @@ class Benchmarker(object):
 
         if detected_failure:
             log.error("Detected unexpected behavior")
-        return specsat_report
+        return specsat_report, detected_failure
 
 
 def parse_args():
@@ -1042,7 +1042,7 @@ def main():
     )
     if zipdump.dir() is not None and zipdump.dir() != output_dir:
         shutil.copytree(output_dir, zipdump.dir(), dirs_exist_ok=True)
-    report = benchmarker.run(
+    report, failure = benchmarker.run(
         iterations=args.get("iterations"),
         lite=args.get("lite", False),
         verbosity=args.get("verbosity"),
@@ -1051,7 +1051,7 @@ def main():
     zipdump.finalie_tarxz()
 
     log.info("Finished SpecSAT")
-    return 0
+    return 1 if failure else 0
 
 
 if __name__ == "__main__":
