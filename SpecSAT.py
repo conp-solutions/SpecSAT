@@ -286,13 +286,9 @@ class SATsolver(object):
     def get_version(self):
         return self._get_version()
 
-    def validate_conflicts(self, expected_conflicts, cores, log_file_name):
-        """Check whether for given cores, conflicts have been detected."""
-
+    def get_conflicts_from_log(self, log_file_name):
+        """Get number of conflicts from solver output."""
         match_line = "c SUM stats conflicts:           :"
-        # parallel solvers report SUM of all conflicts, hence, multiply
-        match_conflicts = int(expected_conflicts) * cores
-
         with open(log_file_name) as log_file:
             all_lines = log_file.readlines()
             for line in all_lines:
@@ -300,20 +296,25 @@ class SATsolver(object):
                     # extract conflicts
                     log.debug("Extracting conflicts from line '%s'", line)
                     conflicts = int(line.split(":")[2])
-                    log.debug("Extraced %d conflicts with %d cores", conflicts, cores)
-                    if match_conflicts == conflicts:
-                        return True
-                    else:
-                        self.log.warning(
-                            "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat",
-                            match_conflicts,
-                            cores,
-                            conflicts,
-                        )
-                        return False
+                    return conflicts
+        # Did not find conflicts
+        return None
 
-        # In case we fail to match anything successfully, fail overall
-        return False
+    def validate_conflicts(self, expected_conflicts, cores, conflicts):
+        """Check whether for given cores, conflicts have been detected."""
+        # parallel solvers report SUM of all conflicts, hence, multiply
+        match_conflicts = int(expected_conflicts) * cores
+
+        if conflicts is not None and match_conflicts == conflicts:
+            return True
+        else:
+            self.log.warning(
+                "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat",
+                match_conflicts,
+                cores,
+                conflicts,
+            )
+            return False
 
 
 class Benchmarker(object):
@@ -464,11 +465,14 @@ class Benchmarker(object):
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(solve_call, output_file)
                     solve_result["validated"] = None
+                    solve_result["conflicts"] = self.solver.get_conflicts_from_log(
+                        output_path
+                    )
                     if cores == 1:
                         if not self.solver.validate_conflicts(
                             benchmark.get("expected_sequential_conflicts"),
                             cores,
-                            output_path,
+                            solve_result["conflicts"],
                         ):
                             detected_failure = True
                             solve_result["validated"] = False
