@@ -37,6 +37,11 @@ execute_silently() {
 }
 
 # Hidden command line options
+if [ "${1:-}" = "--trace" ]; then
+    set -x
+    shift
+fi
+
 RUN_DIR="$PWD"
 if [ "${1:-}" = "--run-from-install" ]; then
     RUN_DIR="$SCRIPT_DIR"
