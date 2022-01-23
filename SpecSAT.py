@@ -388,7 +388,7 @@ class Benchmarker(object):
             {
                 "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 594464,
+                "expected_sequential_conflicts": 452842,
                 "expected_status": 10,
             },
             {
