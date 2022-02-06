@@ -50,6 +50,81 @@ def get_thp_status():
     return "unknown"
 
 
+def build_docker_container():
+    """Build docker container, and return hash."""
+    log.info("Building docker container")
+    cmd = [
+        "docker",
+        "build",
+        "-q",
+        "-f",
+        "Dockerfile",
+        os.path.dirname(os.path.realpath(__file__)),
+    ]
+    log.debug("Using command %r to build docker container", cmd)
+    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if process.returncode != 0:
+        log.error("Command %r failed with status %d", cmd, process.returncode)
+        print("STDOUT: ", process.stdout.decode("utf_8"))
+        print("STDERR: ", process.stderr.decode("utf_8"))
+        raise Exception("Failed execution of %r", cmd)
+    return process.stdout.strip().decode("utf-8")
+
+
+def construct_docker_run_command(container_id, work_dir=None):
+    """Create cmd to jail with docker, an only mount work dir and /dev/shm."""
+    base_id = container_id.split(":")[1]
+    log.debug("Docker command with work_dir '%s'", work_dir)
+    work_dir = work_dir if work_dir else os.getcwd()
+    run_command = [
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        f'USER="{os.getlogin()}',
+        f"-u={os.getuid()}",
+        "-v",
+        f"{work_dir}:{work_dir}",
+        "-v",
+        "/dev/shm:/dev/shm",
+        "-w",
+        f"{work_dir}",
+        base_id,
+    ]
+    return run_command
+
+
+def get_container_call(container_id, call, **kwargs):
+    """Create full cmd, consider kwargs content wrt cwd."""
+    if container_id is None:
+        full_call = call
+    else:
+        # Jail with container, if requested
+        log.debug("locals(): %r", locals())
+        log.debug("kwargs.get(cwd): %r", kwargs.get("cwd"))
+        log.debug("cwd in kwargs: %r", "cwd" in kwargs)
+        log.debug("kwargs list: %r", [x for x in kwargs])
+        log.debug(
+            "Using container %s to jail the call (cwd arg: '%s')",
+            container_id,
+            kwargs.get("cwd", "<none>"),
+        )
+        cmd_prefix = construct_docker_run_command(
+            container_id, work_dir=kwargs.get("cwd", os.getcwd())
+        )
+        full_call = cmd_prefix + call
+        log.debug("Prepare full call %r", full_call)
+
+    log.debug(
+        "Generated full call %r from call %r with args %r with cwd '%s'",
+        full_call,
+        call,
+        kwargs,
+        os.getcwd(),
+    )
+    return full_call
+
+
 def run_silently(call, **kwargs):
     """Run command, an donly print output in case of failure."""
     log.debug("Silently executing call %r", call)
