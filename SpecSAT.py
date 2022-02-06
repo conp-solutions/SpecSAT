@@ -7,6 +7,7 @@ import contextlib
 import copy
 import cpuinfo
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -176,6 +177,13 @@ def get_host_info():
     }
 
 
+def get_md5_checksum(filename):
+    """Return md5sum of a file."""
+    with open(filename, "rb") as f:
+        bytes = f.read()  # read file as bytes
+        return hashlib.md5(bytes).hexdigest()
+
+
 def measure_call(call, output_file, container_id=None):
     """Run the given command, return measured performance data."""
     # Jail with container, if requested
@@ -313,7 +321,10 @@ class SATsolver(object):
                 raise ValueError(error)
             log.info("Using user provided SAT solver, results might differ!")
             self.solver = os.path.realpath(solver_location)
+
         assert self.solver != None
+        self.solver_md5_sum = get_md5_checksum(self.solver)
+        log.info("Use solver with hash sum '%s'", self.solver_md5_sum)
 
     def _get_solver(self, directory, commit=None):
         self.log.debug("get solver: %r", locals())
@@ -373,6 +384,9 @@ class SATsolver(object):
 
     def get_build_command(self):
         return self.build_command
+
+    def get_md5_hash_sum(self):
+        return self.solver_md5_sum
 
     def get_name(self):
         return self.NAME
@@ -447,6 +461,7 @@ class Benchmarker(object):
 
         report["satsolver"] = {
             "name": self.solver.get_name(),
+            "md5_sum": self.solver.get_md5_hash_sum(),
             "version": self.solver.get_version(),
             "build_command": self.solver.get_build_command(),
         }

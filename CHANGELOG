@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+ * store solver binary hashsum (md5)
  * use docker for building the tools (SAT solver and generator)
  * propagate error as status code
  * support full compression of generated output
