@@ -13,7 +13,7 @@ or even the solver implementation can be benchmarked. An example list of
 features is using "huge pages" for memory management, using the prefetching unit
 of the CPU, using different compilation flags, or even use different layout of
 the data structures within the SAT solver (without influencing its search
-steps).
+steps). To use a stable build, docker is used to create the SAT solver binary.
 
 As parallel SAT solvers allow to run different solving configurations in
 parallel, we also measure how well a parallel solver performs on the given
