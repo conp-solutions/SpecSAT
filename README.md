@@ -50,6 +50,12 @@ the native results can be stored:
 ./SpecSAT.py -r full-report.json -o output.json
 ```
 
+### Usage for ARM Platforms
+
+To build the SAT solver, we use a Docker container to make sure we use the same
+libraries and dependencies. The used container file does not work on ARM right
+now. Hence, please use the `--no-docker` parameter to disable using docker.
+
 ### Wrapper Script Extensions
 
 To not bother with setting up the environment, a convenience wrapper is
