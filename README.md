@@ -13,7 +13,7 @@ or even the solver implementation can be benchmarked. An example list of
 features is using "huge pages" for memory management, using the prefetching unit
 of the CPU, using different compilation flags, or even use different layout of
 the data structures within the SAT solver (without influencing its search
-steps).
+steps). To use a stable build, docker is used to create the SAT solver binary.
 
 As parallel SAT solvers allow to run different solving configurations in
 parallel, we also measure how well a parallel solver performs on the given
@@ -24,10 +24,11 @@ physical CPUS (i.e. excluding logical CPUs).
 
 To just benchmark your hardware, use the below command. This will run all
 measurements inside a python virtual environment. A report of your setup will
-automatically be written into the 'archive' directory.
+automatically be written into the 'archive' directory. Finally, the generated
+report, as well as all solver output, will be added to an archive tar file.
 
 ```
-./SpecSAT.sh -A "" -i 3
+./SpecSAT.sh -A "" -i 3 -Z archive.tar.xz
 ```
 
 ## Usage
@@ -48,6 +49,12 @@ the native results can be stored:
 ```
 ./SpecSAT.py -r full-report.json -o output.json
 ```
+
+### Usage for ARM Platforms
+
+To build the SAT solver, we use a Docker container to make sure we use the same
+libraries and dependencies. The used container file does not work on ARM right
+now. Hence, please use the `--no-docker` parameter to disable using docker.
 
 ### Wrapper Script Extensions
 
@@ -180,3 +187,29 @@ Note: the report is supposed to not contain any personal data. However, before
 
 When contributing data to the SpecSAT repository, make sure you provide your
 change with the MIT license.
+
+## Reporting Errors
+
+In case the tool returns with a non-zero exit code, and you want to report an
+issue, please make sure to run the tool with the default setup. If the error
+still persist, one of the following error conditions might be true:
+
+ 1. The used platform is not supported (currently only x86_64)
+    Feel free to extend SpecSAT to support your platform. Further extensions are
+    not considered at the time of writing.
+ 2. The used platform triggers a different behavor in the used solver.
+ 3. Something else.
+
+In case you want to report an issue, feel free to create an issue in github.
+Please re-run SpecSAT in debug mode, and collect all output in an archive. Add
+this archive to the github issue.
+
+Submit an issue here: https://github.com/conp-solutions/SpecSAT/issues
+
+Use these parameters to enable debugging and create an archive: `-d -Z specsat.tar.xz`
+
+Full command to create relevant output for investigation:
+
+```
+./SpecSAT.sh -A "" -d -i 3 -Z archive.tar.xz
+```

@@ -7,12 +7,14 @@ import contextlib
 import copy
 import cpuinfo
 import datetime
+import hashlib
 import json
 import logging
 import os
 import platform
 import psutil
 import requests  # downloading
+import resource  # process limits
 import shutil
 import subprocess
 import sys
@@ -50,17 +52,96 @@ def get_thp_status():
     return "unknown"
 
 
-def run_silently(call, **kwargs):
-    """Run command, an donly print output in case of failure."""
-    log.debug("Silently executing call %r", call)
-    process = subprocess.run(
-        call, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+def build_docker_container():
+    """Build docker container, and return hash."""
+    log.info("Building docker container")
+    cmd = [
+        "docker",
+        "build",
+        "-q",
+        "-f",
+        "Dockerfile",
+        os.path.dirname(os.path.realpath(__file__)),
+    ]
+    log.debug("Using command %r to build docker container", cmd)
+    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if process.returncode != 0:
-        log.error("Command %r failed with status %d", call, process.returncode)
+        log.error("Command %r failed with status %d", cmd, process.returncode)
         print("STDOUT: ", process.stdout.decode("utf_8"))
         print("STDERR: ", process.stderr.decode("utf_8"))
-        raise Exception("Failed execution of %r %r", call, kwargs)
+        raise Exception("Failed execution of %r", cmd)
+    return process.stdout.strip().decode("utf-8")
+
+
+def construct_docker_run_command(container_id, work_dir=None):
+    """Create cmd to jail with docker, an only mount work dir and /dev/shm."""
+    base_id = container_id.split(":")[1]
+    log.debug("Docker command with work_dir '%s'", work_dir)
+    work_dir = work_dir if work_dir else os.getcwd()
+    run_command = [
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        f'USER="{os.getlogin()}',
+        f"-u={os.getuid()}",
+        "-v",
+        f"{work_dir}:{work_dir}",
+        "-v",
+        "/dev/shm:/dev/shm",
+        "-w",
+        f"{work_dir}",
+        base_id,
+    ]
+    return run_command
+
+
+def get_container_call(container_id, call, **kwargs):
+    """Create full cmd, consider kwargs content wrt cwd."""
+    if container_id is None:
+        full_call = call
+    else:
+        # Jail with container, if requested
+        cmd_prefix = construct_docker_run_command(
+            container_id, work_dir=kwargs.get("cwd", os.getcwd())
+        )
+        full_call = cmd_prefix + call
+        log.debug("Prepare full call %r", full_call)
+
+    log.debug(
+        "Generated full call %r from call %r with args %r with cwd '%s'",
+        full_call,
+        call,
+        kwargs,
+        os.getcwd(),
+    )
+    return full_call
+
+
+def set_hour_timeout():
+    """Set max runtime of the calling process to 3600 seconds."""
+    resource.setrlimit(resource.RLIMIT_CPU, (3600, 3600))
+
+
+def run_silently(container_id, call, **kwargs):
+    """Run command, an donly print output in case of failure."""
+    log.debug("Silently executing call %r (with args %r)", call, kwargs)
+
+    # Jail with container, if requested
+    full_call = get_container_call(container_id=container_id, call=call, **kwargs)
+
+    process = subprocess.run(
+        full_call,
+        **kwargs,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        preexec_fn=set_hour_timeout,
+    )
+    if process.returncode != 0:
+        log.error("Command %r failed with status %d", full_call, process.returncode)
+        print("STDOUT: ", process.stdout.decode("utf_8"))
+        print("STDERR: ", process.stderr.decode("utf_8"))
+        raise Exception("Failed execution of %r %r", full_call, kwargs)
 
 
 @contextlib.contextmanager
@@ -96,10 +177,26 @@ def get_host_info():
     }
 
 
-def measure_call(call, output_file):
+def get_md5_checksum(filename):
+    """Return md5sum of a file."""
+    with open(filename, "rb") as f:
+        bytes = f.read()  # read file as bytes
+        return hashlib.md5(bytes).hexdigest()
+
+
+def measure_call(call, output_file, container_id=None):
     """Run the given command, return measured performance data."""
+    # Jail with container, if requested
+    full_call = get_container_call(container_id=container_id, call=call)
+
     pre_stats = os.times()
-    process = subprocess.run(call, stdout=output_file, stderr=subprocess.DEVNULL)
+    # Note: using a docker jail here reduces the precision of the measurement
+    process = subprocess.run(
+        full_call,
+        stdout=output_file,
+        stderr=subprocess.DEVNULL,
+        preexec_fn=set_hour_timeout,
+    )
     post_stats = os.times()
     return {
         "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
@@ -114,8 +211,9 @@ class CNFgenerator(object):
     URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
     VERSION = "modularityGen_v2.1"
 
-    def __init__(self, cxx="g++", tool_location=None):
+    def __init__(self, container_id=None, cxx="g++", tool_location=None):
         self.log = logging.getLogger(self.__class__.__name__)
+        self.container_id = container_id
         self.solver = None
         self.workdir = tempfile.TemporaryDirectory(
             prefix="specsat_solver", dir=os.getcwd()
@@ -155,7 +253,7 @@ class CNFgenerator(object):
     def _build_generator(self, cxx="g++"):
         build_call = [cxx, "-O2", self.sourcefile, "-o", self.generator]  # "-Wall"
         self.log.debug("Building solver with %r", build_call)
-        run_silently(build_call)
+        run_silently(container_id=self.container_id, call=build_call)
 
     def generate(self, output_file, parameter=None):
         self.log.debug(
@@ -187,11 +285,13 @@ class SATsolver(object):
         compiler=None,
         compile_flags=None,
         commit=None,
+        container_id=None,
         mode=None,
         solver_location=None,
     ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
+        self.container_id = container_id
         self.mode = "debug" if mode == "debug" else "release"
         self.solver = None
         self.version = None
@@ -221,18 +321,21 @@ class SATsolver(object):
                 raise ValueError(error)
             log.info("Using user provided SAT solver, results might differ!")
             self.solver = os.path.realpath(solver_location)
+
         assert self.solver != None
+        self.solver_md5_sum = get_md5_checksum(self.solver)
+        log.info("Use solver with hash sum '%s'", self.solver_md5_sum)
 
     def _get_solver(self, directory, commit=None):
         self.log.debug("get solver: %r", locals())
         clone_call = ["git", "clone", self.REPO, directory]
         self.log.debug("Cloning solver with: %r", clone_call)
-        run_silently(clone_call)
+        run_silently(container_id=self.container_id, call=clone_call)
         if commit:
             checkout_call = ["git", "reset", "--hard", commit]
             self.log.debug("Select SAT commit %r", checkout_call)
             with pushd(directory):
-                run_silently(checkout_call)
+                run_silently(container_id=self.container_id, call=checkout_call)
 
     def _build_solver(self, compiler=None, compile_flags=None):
         self.build_command = [
@@ -250,7 +353,9 @@ class SATsolver(object):
         self.log.debug(
             "Building solver with: %r in cwd: '%s'", self.build_command, self.solverdir
         )
-        run_silently(self.build_command, cwd=self.solverdir)
+        run_silently(
+            container_id=self.container_id, call=self.build_command, cwd=self.solverdir
+        )
         self.solver = os.path.join(self.solverdir, *self.binary)
 
     def _get_version(self):
@@ -280,19 +385,18 @@ class SATsolver(object):
     def get_build_command(self):
         return self.build_command
 
+    def get_md5_hash_sum(self):
+        return self.solver_md5_sum
+
     def get_name(self):
         return self.NAME
 
     def get_version(self):
         return self._get_version()
 
-    def validate_conflicts(self, expected_conflicts, cores, log_file_name):
-        """Check whether for given cores, conflicts have been detected."""
-
+    def get_conflicts_from_log(self, log_file_name):
+        """Get number of conflicts from solver output."""
         match_line = "c SUM stats conflicts:           :"
-        # parallel solvers report SUM of all conflicts, hence, multiply
-        match_conflicts = int(expected_conflicts) * cores
-
         with open(log_file_name) as log_file:
             all_lines = log_file.readlines()
             for line in all_lines:
@@ -300,26 +404,34 @@ class SATsolver(object):
                     # extract conflicts
                     log.debug("Extracting conflicts from line '%s'", line)
                     conflicts = int(line.split(":")[2])
-                    log.debug("Extraced %d conflicts with %d cores", conflicts, cores)
-                    if match_conflicts == conflicts:
-                        return True
-                    else:
-                        self.log.warning(
-                            "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat",
-                            match_conflicts,
-                            cores,
-                            conflicts,
-                        )
-                        return False
+                    return conflicts
+        # Did not find conflicts
+        return None
 
-        # In case we fail to match anything successfully, fail overall
-        return False
+    def validate_conflicts(self, expected_conflicts, cores, conflicts):
+        """Check whether for given cores, conflicts have been detected."""
+        # parallel solvers report SUM of all conflicts, hence, multiply
+        match_conflicts = int(expected_conflicts) * cores
+
+        if conflicts is not None and match_conflicts == conflicts:
+            return True
+        else:
+            self.log.warning(
+                "Expected conflicts %d for cores %d do not match detected conflicts %d - please report mismatch to author of SpecSAT and MergeSat",
+                match_conflicts,
+                cores,
+                conflicts,
+            )
+            return False
 
 
 class Benchmarker(object):
     BASE_WORK_DIR = FAST_WORK_DIR_NAME
+    DOCKER_RUN_PREFIX = []
 
-    def __init__(self, solver, generator, used_user_tools, dump_dir=None):
+    def __init__(
+        self, solver, generator, used_user_tools, container_id=None, dump_dir=None
+    ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.debug("Get SAT Solver")
         self.solver = solver
@@ -327,6 +439,7 @@ class Benchmarker(object):
         self.relevant_cores = None
         self.fail_early = False
         self.used_user_tools = used_user_tools
+        self.container_id = container_id
         self.dump_dir = dump_dir
         if self.dump_dir:
             self.dump_dir = os.path.realpath(self.dump_dir)
@@ -348,6 +461,7 @@ class Benchmarker(object):
 
         report["satsolver"] = {
             "name": self.solver.get_name(),
+            "md5_sum": self.solver.get_md5_hash_sum(),
             "version": self.solver.get_version(),
             "build_command": self.solver.get_build_command(),
         }
@@ -387,7 +501,7 @@ class Benchmarker(object):
             {
                 "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 594464,
+                "expected_sequential_conflicts": 452842,
                 "expected_status": 10,
             },
             {
@@ -462,17 +576,21 @@ class Benchmarker(object):
                     )
 
                     with open(output_path, "w") as output_file:
-                        solve_result = measure_call(solve_call, output_file)
+                        solve_result = measure_call(
+                            solve_call, output_file, container_id=self.container_id
+                        )
+                    solve_result["validated"] = None
+                    solve_result["conflicts"] = self.solver.get_conflicts_from_log(
+                        output_path
+                    )
                     if cores == 1:
                         if not self.solver.validate_conflicts(
                             benchmark.get("expected_sequential_conflicts"),
                             cores,
-                            output_path,
+                            solve_result["conflicts"],
                         ):
                             detected_failure = True
                             solve_result["validated"] = False
-                        else:
-                            solve_result["validated"] = None
                     solve_result["iteration"] = iteration
                     solve_result["cores"] = core_data
                     solve_result["call"] = solve_call
@@ -490,6 +608,7 @@ class Benchmarker(object):
                         )
                         detected_failure = True
                         okay_run = False
+                    if detected_failure:
                         report["failed_runs"] += 1
                     solve_result["okay"] = okay_run
                     solve_result["benchmark"] = benchmark
@@ -705,7 +824,7 @@ class Benchmarker(object):
 
         if detected_failure:
             log.error("Detected unexpected behavior")
-        return specsat_report
+        return specsat_report, detected_failure
 
 
 def parse_args():
@@ -736,6 +855,20 @@ def parse_args():
     )
     parser.add_argument(
         "-i", "--iterations", default=1, type=int, help="Re-run a run multiple times"
+    )
+    parser.add_argument(
+        "-u",
+        "--no-docker",
+        default=False,
+        action="store_true",
+        help="Disable jailing with docker (more accuracy, native execution)",
+    )
+    parser.add_argument(
+        "-R",
+        "--docker-runtime",
+        default=False,
+        action="store_true",
+        help="Jail measurement with docker (independent of build settings)",
     )
     parser.add_argument(
         "-n",
@@ -894,7 +1027,7 @@ def write_report(report, args, tarxzdump):
             json.dump(report, f, indent=4, sort_keys=True)
 
 
-def build_tools(args):
+def build_tools(args, container_id=None):
     """Build required tools, report whether user provided tools have been used."""
     generator_location = args.get("generator_location")
     generator_location = (
@@ -911,7 +1044,9 @@ def build_tools(args):
     with pushd(args["work_dir"]):
         log.info("Building CNF generator")
         generator = CNFgenerator(
-            cxx=args.get("generator_cxx"), tool_location=generator_location
+            container_id=container_id,
+            cxx=args.get("generator_cxx"),
+            tool_location=generator_location,
         )
         log.debug(
             "Build generator '%s' with version '%s'",
@@ -925,6 +1060,7 @@ def build_tools(args):
             compiler=args.get("sat_compiler"),
             compile_flags=args.get("sat_compile_flags"),
             commit=args.get("sat_commit"),
+            container_id=container_id,
             mode=args.get("sat_mode"),
             solver_location=solver_location,
         )
@@ -1028,21 +1164,26 @@ def main():
     zipdump = TarXZDump(args.get("zip"))
 
     log.info("SpecSAT 2021, version %s", VERSION)
-
-    satsolver, generator, used_user_tools = build_tools(args)
-
     log.debug("Starting benchmarking with args: %r", args)
+
+    container_id = None
+    if not args.get("no_docker", True) or args.get("docker_runtime", False):
+        container_id = build_docker_container()
+
+    satsolver, generator, used_user_tools = build_tools(args, container_id=container_id)
+
     output_dir = args.get("dump_dir")
     output_dir = output_dir if output_dir is not None else zipdump.dir()
     benchmarker = Benchmarker(
         solver=satsolver,
         generator=generator,
         used_user_tools=used_user_tools,
+        container_id=container_id if args.get("docker_runtime", False) else None,
         dump_dir=output_dir,
     )
     if zipdump.dir() is not None and zipdump.dir() != output_dir:
         shutil.copytree(output_dir, zipdump.dir(), dirs_exist_ok=True)
-    report = benchmarker.run(
+    report, failure = benchmarker.run(
         iterations=args.get("iterations"),
         lite=args.get("lite", False),
         verbosity=args.get("verbosity"),
@@ -1051,7 +1192,7 @@ def main():
     zipdump.finalie_tarxz()
 
     log.info("Finished SpecSAT")
-    return 0
+    return 1 if failure else 0
 
 
 if __name__ == "__main__":

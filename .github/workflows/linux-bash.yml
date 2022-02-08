@@ -17,5 +17,5 @@ jobs:
     - uses: actions/checkout@v1
 
     - name: Run CI script
-      run: ./SpecSAT.sh -d -A ""
+      run: ./SpecSAT.sh -d -u -A ""
 
