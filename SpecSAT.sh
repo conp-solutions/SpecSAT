@@ -43,12 +43,20 @@ if [ "${1:-}" = "--trace" ]; then
 fi
 
 RUN_DIR="$PWD"
-if [ "${1:-}" = "--run-from-install" ]; then
+# Use bash script dir as run-dir?
+if [ "${1:-}" = "--sh-run-from-install" ]; then
     RUN_DIR="$SCRIPT_DIR"
     shift
 fi
 
-if [ "${1:-}" = "--force-install" ]; then
+# Set specific run-dir?
+if [ "${1:-}" = "--sh-run-dir" ] && [ -n "${2:-}" ]; then
+    RUN_DIR="$2"
+    shift 2
+fi
+
+# Re-install dependencies in virtual env?
+if [ "${1:-}" = "--sh-force-install" ]; then
     FORCE_INSTALL="true"
     shift
 fi
