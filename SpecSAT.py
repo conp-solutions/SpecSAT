@@ -395,6 +395,9 @@ class SATsolver(object):
     def get_name(self):
         return self.NAME
 
+    def get_solver_path(self):
+        return self.solver
+
     def get_version(self):
         return self._get_version()
 
@@ -427,6 +430,20 @@ class SATsolver(object):
                 conflicts,
             )
             return False
+
+    def zip_solver(self, zipname):
+        """Create a zipfile and store the SAT solver binary."""
+        log.info("Zip solver into '%s'", zipname)
+        zipname = os.path.realpath(zipname)
+        solver_path = self.get_solver_path()
+        solver_name = os.path.basename(solver_path)
+        pwd = os.getcwd()
+        os.chdir(os.path.dirname(os.path.abspath(solver_path)))
+        outfile = tarfile.open(zipname, "w:xz")
+        log.info("Add solver '%s' to dump", solver_name)
+        outfile.add(solver_name)
+        outfile.close()
+        os.chdir(pwd)
 
 
 class Benchmarker(object):
@@ -913,7 +930,14 @@ def parse_args():
         "--zip",
         default=None,
         type=str,
-        help="Zip full output into the given file",
+        help="Zip full output into the given tar.xz file",
+    )
+    parser.add_argument(
+        "-z",
+        "--zip-solver",
+        default=None,
+        type=str,
+        help="Zip solver binary into the given tar.xz file",
     )
 
     parser.add_argument(
@@ -1178,6 +1202,9 @@ def main():
         container_id = build_docker_container()
 
     satsolver, generator, used_user_tools = build_tools(args, container_id=container_id)
+
+    if args.get("zip_solver"):
+        satsolver.zip_solver(args.get("zip_solver"))
 
     output_dir = args.get("dump_dir")
     output_dir = output_dir if output_dir is not None else zipdump.dir()
