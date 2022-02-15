@@ -50,6 +50,51 @@ the native results can be stored:
 ./SpecSAT.py -r full-report.json -o output.json
 ```
 
+### Running with no docker available
+
+To build the SAT solver, we use a Docker container to make sure we use the same
+libraries and dependencies. However, some systems that should be evaluated do
+not come with a docker setup, and the user might lack administrator privileges
+to add docker. To work-around these situations, the tool allows to store the
+used SAT solver in a ZIP file. Next, the binary in that file can be used in a
+follow up run on the actual target machine. The steps are as follows:
+
+#### Run lite mode to store the compiled solver
+
+First, run a lite run, and build the SAT solver in a docker container. Also,
+store the solver in an archive.
+
+```
+./SpecSAT.py -l -z mergesat.tar.gz -o precompile-report.json
+```
+
+#### Run actual measurement with pre-compiled solver
+
+On the target machine, we can then receive the target file, extract it, and
+then forward it to SpecSAT.
+
+```
+tar xJf mergesat.tar.gz
+./SpecSAT.sh -r full-report.json -o output.json --solver-location mergesat
+```
+
+Note: the new tool will now complain about using an external solver, and
+suggests the measurement might not be correct. You can compare the md5 sum of
+the used binary against the precompiled binary to make sure the results are
+actually correct:
+
+On the build machine:
+
+```
+grep "md5" precompile-report.json
+```
+
+On the measurement machine:
+
+```
+grep "md5" output.json
+```
+
 ### Usage for ARM Platforms
 
 To build the SAT solver, we use a Docker container to make sure we use the same

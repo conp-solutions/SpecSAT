@@ -184,7 +184,7 @@ def get_md5_checksum(filename):
         return hashlib.md5(bytes).hexdigest()
 
 
-def measure_call(call, output_file, container_id=None):
+def measure_call(call, output_file, container_id=None, expected_code=None):
     """Run the given command, return measured performance data."""
     # Jail with container, if requested
     full_call = get_container_call(container_id=container_id, call=call)
@@ -198,6 +198,10 @@ def measure_call(call, output_file, container_id=None):
         preexec_fn=set_hour_timeout,
     )
     post_stats = os.times()
+    if expected_code is not None and process.returncode != expected_code:
+        log.error("Detected unexpected solver behavior, printing output")
+        print("STDOUT: ", process.stdout.decode("utf_8"))
+        print("STDERR: ", process.stderr.decode("utf_8"))
     return {
         "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
         "wall_time_s": post_stats[4] - pre_stats[4],
@@ -391,6 +395,9 @@ class SATsolver(object):
     def get_name(self):
         return self.NAME
 
+    def get_solver_path(self):
+        return self.solver
+
     def get_version(self):
         return self._get_version()
 
@@ -423,6 +430,20 @@ class SATsolver(object):
                 conflicts,
             )
             return False
+
+    def zip_solver(self, zipname):
+        """Create a zipfile and store the SAT solver binary."""
+        log.info("Zip solver into '%s'", zipname)
+        zipname = os.path.realpath(zipname)
+        solver_path = self.get_solver_path()
+        solver_name = os.path.basename(solver_path)
+        pwd = os.getcwd()
+        os.chdir(os.path.dirname(os.path.abspath(solver_path)))
+        outfile = tarfile.open(zipname, "w:xz")
+        log.info("Add solver '%s' to dump", solver_name)
+        outfile.add(solver_name)
+        outfile.close()
+        os.chdir(pwd)
 
 
 class Benchmarker(object):
@@ -577,7 +598,10 @@ class Benchmarker(object):
 
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(
-                            solve_call, output_file, container_id=self.container_id
+                            solve_call,
+                            output_file,
+                            container_id=self.container_id,
+                            expected_code=benchmark["expected_status"],
                         )
                     solve_result["validated"] = None
                     solve_result["conflicts"] = self.solver.get_conflicts_from_log(
@@ -906,7 +930,14 @@ def parse_args():
         "--zip",
         default=None,
         type=str,
-        help="Zip full output into the given file",
+        help="Zip full output into the given tar.xz file",
+    )
+    parser.add_argument(
+        "-z",
+        "--zip-solver",
+        default=None,
+        type=str,
+        help="Zip solver binary into the given tar.xz file",
     )
 
     parser.add_argument(
@@ -1171,6 +1202,9 @@ def main():
         container_id = build_docker_container()
 
     satsolver, generator, used_user_tools = build_tools(args, container_id=container_id)
+
+    if args.get("zip_solver"):
+        satsolver.zip_solver(args.get("zip_solver"))
 
     output_dir = args.get("dump_dir")
     output_dir = output_dir if output_dir is not None else zipdump.dir()
