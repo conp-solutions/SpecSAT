@@ -65,7 +65,7 @@ First, run a lite run, and build the SAT solver in a docker container. Also,
 store the solver in an archive.
 
 ```
-./SpecSAT.py -l -z mergesat.tar.gz -o precompile-report.json
+./SpecSAT.py -l -z mergesat.tar.xz -o precompile-report.json
 ```
 
 #### Run actual measurement with pre-compiled solver
@@ -74,7 +74,7 @@ On the target machine, we can then receive the target file, extract it, and
 then forward it to SpecSAT.
 
 ```
-tar xJf mergesat.tar.gz
+tar xJf mergesat.tar.xz
 ./SpecSAT.sh -r full-report.json -o output.json --solver-location mergesat
 ```
 
