@@ -377,11 +377,13 @@ class SATsolver(object):
             self.version = process.stdout.strip().decode("utf-8")
         return self.version
 
-    def solve_call(self, formula_path, cores):
+    def solve_call(self, formula_path, cores, expected_conflicts):
         assert self.solver != None
         call = [self.solver] + self.SOLVER_PARAMETER + [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
+        if expected_conflicts is not None:
+            call += ["-con-lim={0}".format(expected_conflicts + 20000)]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
@@ -588,7 +590,13 @@ class Benchmarker(object):
                         )
                         continue
                     okay_run = True
-                    solve_call = self.solver.solve_call(formula_path, cores)
+                    solve_call = self.solver.solve_call(
+                        formula_path,
+                        cores,
+                        None
+                        if cores != 1
+                        else benchmark.get("expected_sequential_conflicts"),
+                    )
                     log.debug(
                         "Solving formula %r and cores %d with solving call %r",
                         benchmark,
