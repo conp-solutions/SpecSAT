@@ -282,7 +282,7 @@ class CNFgenerator(object):
 class SATsolver(object):
     NAME = "mergesat"
     REPO = "https://github.com/conp-solutions/mergesat.git"
-    SOLVER_PARAMETER = ["-no-diversify"]
+    SOLVER_PARAMETER = ["-no-diversify", "-no-lib-math"]
 
     def __init__(
         self,
@@ -506,7 +506,7 @@ class Benchmarker(object):
             {
                 "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
                 "base_sequential_cpu_time": 20,
-                "expected_sequential_conflicts": 728584,
+                "expected_sequential_conflicts": 905998,
                 "expected_status": 20,
             },
             {
@@ -518,19 +518,19 @@ class Benchmarker(object):
             {
                 "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
                 "base_sequential_cpu_time": 35,
-                "expected_sequential_conflicts": 606635,
+                "expected_sequential_conflicts": 602372,
                 "expected_status": 10,
             },
             {
                 "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 452842,
+                "expected_sequential_conflicts": 452877,
                 "expected_status": 10,
             },
             {
                 "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 2172508,
+                "expected_sequential_conflicts": 2110052,
                 "expected_status": 10,
                 "restriction": "sequential",
             },
