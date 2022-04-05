@@ -373,12 +373,14 @@ class SATsolver(object):
             self.version = process.stdout.strip().decode("utf-8")
         return self.version
 
-    def solve_call(self, formula_path, cores, expected_conflicts):
+    def solve_call(self, formula_path, cores, expected_conflicts, max_conflicts=None):
         assert self.solver != None
         call = [self.solver] + self.SOLVER_PARAMETER + [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
-        if expected_conflicts is not None:
+        if max_conflicts is not None:
+            call += ["-con-lim={0}".format(max_conflicts + 1)]
+        elif expected_conflicts is not None:
             call += ["-con-lim={0}".format(expected_conflicts + 20000)]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
@@ -498,30 +500,35 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 48,
                 "expected_status": 10,
+                "max_parallel_conflicts": 130,
             },
             {
                 "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
                 "base_sequential_cpu_time": 20,
                 "expected_sequential_conflicts": 905998,
                 "expected_status": 20,
+                "max_parallel_conflicts": 1273308,
             },
             {
                 "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 352,
                 "expected_status": 10,
+                "max_parallel_conflicts": 956,
             },
             {
                 "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
                 "base_sequential_cpu_time": 35,
                 "expected_sequential_conflicts": 602372,
                 "expected_status": 10,
+                "max_parallel_conflicts": 1206209,
             },
             {
                 "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
                 "base_sequential_cpu_time": 100,
                 "expected_sequential_conflicts": 452877,
                 "expected_status": 10,
+                "max_parallel_conflicts": 463282,
             },
             {
                 "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
@@ -534,6 +541,7 @@ class Benchmarker(object):
                 "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
                 "base_sequential_cpu_time": 100,
                 "expected_status": 10,
+                "max_parallel_conflicts": 2547169,
                 "restriction": "parallel",
             },
         ]
@@ -589,7 +597,7 @@ class Benchmarker(object):
                     solve_call = self.solver.solve_call(
                         formula_path,
                         cores,
-                        None
+                        benchmark.get("max_parallel_conflicts")
                         if cores != 1
                         else benchmark.get("expected_sequential_conflicts"),
                     )
