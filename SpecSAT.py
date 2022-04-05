@@ -212,7 +212,7 @@ def measure_call(call, output_file, container_id=None, expected_code=None):
 class CNFgenerator(object):
 
     NAME = "modgen"
-    URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
+    REPO = "https://github.com/conp-solutions/modularityGen.git"
     VERSION = "modularityGen_v2.1"
 
     def __init__(self, container_id=None, cxx="g++", tool_location=None):
@@ -239,20 +239,16 @@ class CNFgenerator(object):
             self.VERSION = "<UserProvided>"
 
     def _get_generator(self):
-        self.log.debug("Downloading '%s' from '%s'", self.NAME, self.URL)
+        self.log.debug("Cloning '%s' from '%s'", self.NAME, self.REPO)
+        commit = "cb88f2f3c7790bb478c4ff9bc9a17d7a3625591a"
         with pushd(self.workdir.name):
-            targz_file_name = "modularityGen_v2.1.tar.gz"
+            clone_call = ["git", "clone", self.REPO, "."]
+            self.log.debug("Cloning generator with: %r", clone_call)
+            run_silently(container_id=self.container_id, call=clone_call)
 
-            # download
-            response = requests.get(self.URL, stream=True)
-            with open(targz_file_name, "wb") as out_file:
-                shutil.copyfileobj(response.raw, out_file)
-            del response
-
-            # extract
-            tar = tarfile.open(targz_file_name, mode="r:gz")
-            tar.extractall()
-            tar.close()
+            checkout_call = ["git", "reset", "--hard", commit]
+            self.log.debug("Select generator commit %r", checkout_call)
+            run_silently(container_id=self.container_id, call=checkout_call)
 
     def _build_generator(self, cxx="g++"):
         build_call = [cxx, "-O2", self.sourcefile, "-o", self.generator]  # "-Wall"
