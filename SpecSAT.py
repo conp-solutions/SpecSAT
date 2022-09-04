@@ -500,6 +500,7 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 48,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "0dc0f0402648bc7f2f6a5ec6973e6d7b",
                 "max_parallel_conflicts": 130,
             },
             {
@@ -507,6 +508,7 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 20,
                 "expected_sequential_conflicts": 905998,
                 "expected_status": 20,
+                "expected_benchmark_md5_hash": "67159456029751365efc2451c9c852f2",
                 "max_parallel_conflicts": 1273308,
             },
             {
@@ -514,6 +516,7 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 352,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "7a31a059e2f4986163daae16b56b6bf9",
                 "max_parallel_conflicts": 956,
             },
             {
@@ -521,6 +524,7 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 35,
                 "expected_sequential_conflicts": 602372,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "20a7965a2b73dcfa4a40d14c34514a7f",
                 "max_parallel_conflicts": 1206209,
             },
             {
@@ -528,6 +532,7 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 100,
                 "expected_sequential_conflicts": 452877,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "4113df86bee4aef4576790b567d3be48",
                 "max_parallel_conflicts": 463282,
             },
             {
@@ -535,12 +540,14 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 100,
                 "expected_sequential_conflicts": 2110052,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "b07fdf45f216f777b88146f7a30d0f43",
                 "restriction": "sequential",
             },
             {
                 "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
                 "base_sequential_cpu_time": 100,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "ea8a0cd41f8d79367047070a5fbc9c3b",
                 "max_parallel_conflicts": 2547169,
                 "restriction": "parallel",
             },
@@ -578,6 +585,22 @@ class Benchmarker(object):
 
                 log.info("Solving benchmark %r", benchmark)
                 self.generator.generate(formula_path, benchmark["parameter"])
+                benchmark_md5_hash = get_md5_checksum(formula_path)
+                log.debug(
+                    "Generated benchmark with hash sum: %s with parameters %r",
+                    benchmark_md5_hash,
+                    benchmark["parameter"],
+                )
+                expected_benchmark_md5_hash = benchmark["expected_benchmark_md5_hash"]
+                if benchmark_md5_hash != expected_benchmark_md5_hash:
+                    log.error(
+                        "Did not generate benchmark with known hash sum (benchmark: '%s', expected: '%s')",
+                        benchmark_md5_hash,
+                        expected_benchmark_md5_hash,
+                    )
+                    detected_failure = True
+                    # TODO: create list of detected errors for error summary
+
                 for core_data in relevant_cores:
                     if detected_failure and self.fail_early:
                         break
