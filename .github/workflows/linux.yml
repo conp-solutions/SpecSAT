@@ -8,7 +8,7 @@ on:
 jobs:
   Linux:
 
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Install Packages
@@ -28,3 +28,46 @@ jobs:
           tar -tJf dump.tar.xz &> /dev/null
           ls -l dump.tar.xz
 
+  Linux-20.04:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+
+    - name: run CI script
+      run: ./SpecSAT.py -d -u
+
+    - name: run script in light mode, and dumping everything to a single archive
+      run: |
+          ./SpecSAT.py -l -u -Z dump.tar.xz
+          tar -tJf dump.tar.xz &> /dev/null
+          ls -l dump.tar.xz
+
+  Linux-18.04:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+
+    - name: run CI script
+      run: ./SpecSAT.py -d -u
+
+    - name: run script in light mode, and dumping everything to a single archive
+      run: |
+          ./SpecSAT.py -l -u -Z dump.tar.xz
+          tar -tJf dump.tar.xz &> /dev/null
+          ls -l dump.tar.xz

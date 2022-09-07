@@ -212,7 +212,7 @@ def measure_call(call, output_file, container_id=None, expected_code=None):
 class CNFgenerator(object):
 
     NAME = "modgen"
-    URL = "https://www.ugr.es/~jgiraldez/download/modularityGen_v2.1.tar.gz"
+    REPO = "https://github.com/conp-solutions/modularityGen.git"
     VERSION = "modularityGen_v2.1"
 
     def __init__(self, container_id=None, cxx="g++", tool_location=None):
@@ -239,20 +239,16 @@ class CNFgenerator(object):
             self.VERSION = "<UserProvided>"
 
     def _get_generator(self):
-        self.log.debug("Downloading '%s' from '%s'", self.NAME, self.URL)
+        self.log.debug("Cloning '%s' from '%s'", self.NAME, self.REPO)
+        commit = "cb88f2f3c7790bb478c4ff9bc9a17d7a3625591a"
         with pushd(self.workdir.name):
-            targz_file_name = "modularityGen_v2.1.tar.gz"
+            clone_call = ["git", "clone", self.REPO, "."]
+            self.log.debug("Cloning generator with: %r", clone_call)
+            run_silently(container_id=self.container_id, call=clone_call)
 
-            # download
-            response = requests.get(self.URL, stream=True)
-            with open(targz_file_name, "wb") as out_file:
-                shutil.copyfileobj(response.raw, out_file)
-            del response
-
-            # extract
-            tar = tarfile.open(targz_file_name, mode="r:gz")
-            tar.extractall()
-            tar.close()
+            checkout_call = ["git", "reset", "--hard", commit]
+            self.log.debug("Select generator commit %r", checkout_call)
+            run_silently(container_id=self.container_id, call=checkout_call)
 
     def _build_generator(self, cxx="g++"):
         build_call = [cxx, "-O2", self.sourcefile, "-o", self.generator]  # "-Wall"
@@ -282,7 +278,7 @@ class CNFgenerator(object):
 class SATsolver(object):
     NAME = "mergesat"
     REPO = "https://github.com/conp-solutions/mergesat.git"
-    SOLVER_PARAMETER = ["-no-diversify"]
+    SOLVER_PARAMETER = ["-no-diversify", "-no-lib-math"]
 
     def __init__(
         self,
@@ -377,11 +373,15 @@ class SATsolver(object):
             self.version = process.stdout.strip().decode("utf-8")
         return self.version
 
-    def solve_call(self, formula_path, cores):
+    def solve_call(self, formula_path, cores, expected_conflicts, max_conflicts=None):
         assert self.solver != None
         call = [self.solver] + self.SOLVER_PARAMETER + [f"-cores={cores}"]
         if cores > 1:
             call += ["-no-pre"]
+        if max_conflicts is not None:
+            call += ["-con-lim={0}".format(max_conflicts + 1)]
+        elif expected_conflicts is not None:
+            call += ["-con-lim={0}".format(expected_conflicts + 20000)]
         call += [formula_path]
         self.log.debug("Generated solver call: '%r'", call)
         return call
@@ -500,42 +500,55 @@ class Benchmarker(object):
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 48,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "0dc0f0402648bc7f2f6a5ec6973e6d7b",
+                "max_parallel_conflicts": 130,
             },
             {
                 "parameter": ["-s", "2400", "-n", "15000", "-m", "72500"],
                 "base_sequential_cpu_time": 20,
-                "expected_sequential_conflicts": 728584,
+                "expected_sequential_conflicts": 905998,
                 "expected_status": 20,
+                "expected_benchmark_md5_hash": "67159456029751365efc2451c9c852f2",
+                "max_parallel_conflicts": 1273308,
             },
             {
                 "parameter": ["-s", "4900", "-n", "1000000", "-m", "3000000"],
                 "base_sequential_cpu_time": 25,
                 "expected_sequential_conflicts": 352,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "7a31a059e2f4986163daae16b56b6bf9",
+                "max_parallel_conflicts": 956,
             },
             {
                 "parameter": ["-s", "3900", "-n", "10000", "-m", "38000"],
                 "base_sequential_cpu_time": 35,
-                "expected_sequential_conflicts": 606635,
+                "expected_sequential_conflicts": 602372,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "20a7965a2b73dcfa4a40d14c34514a7f",
+                "max_parallel_conflicts": 1206209,
             },
             {
                 "parameter": ["-n", "2200", "-m", "9086", "-c", "40", "-s", "158"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 452842,
+                "expected_sequential_conflicts": 452877,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "4113df86bee4aef4576790b567d3be48",
+                "max_parallel_conflicts": 463282,
             },
             {
                 "parameter": ["-n", "45000", "-m", "171000", "-c", "40", "-s", "100"],
                 "base_sequential_cpu_time": 100,
-                "expected_sequential_conflicts": 2172508,
+                "expected_sequential_conflicts": 2110052,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "b07fdf45f216f777b88146f7a30d0f43",
                 "restriction": "sequential",
             },
             {
                 "parameter": ["-n", "52500", "-m", "194250", "-c", "40", "-s", "100"],
                 "base_sequential_cpu_time": 100,
                 "expected_status": 10,
+                "expected_benchmark_md5_hash": "ea8a0cd41f8d79367047070a5fbc9c3b",
+                "max_parallel_conflicts": 2547169,
                 "restriction": "parallel",
             },
         ]
@@ -572,6 +585,22 @@ class Benchmarker(object):
 
                 log.info("Solving benchmark %r", benchmark)
                 self.generator.generate(formula_path, benchmark["parameter"])
+                benchmark_md5_hash = get_md5_checksum(formula_path)
+                log.debug(
+                    "Generated benchmark with hash sum: %s with parameters %r",
+                    benchmark_md5_hash,
+                    benchmark["parameter"],
+                )
+                expected_benchmark_md5_hash = benchmark["expected_benchmark_md5_hash"]
+                if benchmark_md5_hash != expected_benchmark_md5_hash:
+                    log.error(
+                        "Did not generate benchmark with known hash sum (benchmark: '%s', expected: '%s')",
+                        benchmark_md5_hash,
+                        expected_benchmark_md5_hash,
+                    )
+                    detected_failure = True
+                    # TODO: create list of detected errors for error summary
+
                 for core_data in relevant_cores:
                     if detected_failure and self.fail_early:
                         break
@@ -588,7 +617,13 @@ class Benchmarker(object):
                         )
                         continue
                     okay_run = True
-                    solve_call = self.solver.solve_call(formula_path, cores)
+                    solve_call = self.solver.solve_call(
+                        formula_path,
+                        cores,
+                        benchmark.get("max_parallel_conflicts")
+                        if cores != 1
+                        else benchmark.get("expected_sequential_conflicts"),
+                    )
                     log.debug(
                         "Solving formula %r and cores %d with solving call %r",
                         benchmark,
@@ -954,7 +989,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--sat-commit", default="v3.2.3", help="Use this commit of the SAT solver"
+        "--sat-commit", default="v3.3.0", help="Use this commit of the SAT solver"
     )
     parser.add_argument("--sat-compiler", default=None, help="Use this compiler as CXX")
     parser.add_argument(
