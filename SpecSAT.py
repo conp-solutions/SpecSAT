@@ -199,9 +199,7 @@ def measure_call(call, output_file, container_id=None, expected_code=None):
     )
     post_stats = os.times()
     if expected_code is not None and process.returncode != expected_code:
-        log.error("Detected unexpected solver behavior, printing output")
-        print("STDOUT: ", process.stdout.decode("utf_8"))
-        print("STDERR: ", process.stderr.decode("utf_8"))
+        log.error("Detected unexpected solver behavior when running: %r", full_call)
     return {
         "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
         "wall_time_s": post_stats[4] - pre_stats[4],
