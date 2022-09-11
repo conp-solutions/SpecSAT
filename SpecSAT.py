@@ -31,7 +31,7 @@ FAST_WORK_DIR = tempfile.TemporaryDirectory(
     dir=None if sys.platform == "darwin" else "/dev/shm"
 )
 FAST_WORK_DIR_NAME = FAST_WORK_DIR.name
-VERSION = "0.0.3"  # Version of this tool
+VERSION = "0.2.0"  # Version of this tool
 ZIP_BSAE_DIRNAME = "SpecSAT_data"
 
 
@@ -1041,7 +1041,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--sat-commit", default="v3.3.0", help="Use this commit of the SAT solver"
+        "--sat-commit", default="v3.3.1", help="Use this commit of the SAT solver"
     )
     parser.add_argument("--sat-compiler", default=None, help="Use this compiler as CXX")
     parser.add_argument(
