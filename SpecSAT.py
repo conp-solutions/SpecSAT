@@ -451,7 +451,13 @@ class Benchmarker(object):
     DOCKER_RUN_PREFIX = []
 
     def __init__(
-        self, solver, generator, used_user_tools, container_id=None, dump_dir=None
+        self,
+        solver,
+        generator,
+        used_user_tools,
+        container_id=None,
+        dump_dir=None,
+        pre_gerated_formula_directory=None,
     ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.debug("Get SAT Solver")
@@ -467,6 +473,7 @@ class Benchmarker(object):
             if not os.path.exists(self.dump_dir):
                 log.info("Creating output dump dir '%s'", self.dump_dir)
                 os.makedirs(self.dump_dir)
+        self.pre_gerated_formula_directory = pre_gerated_formula_directory
 
     def _prepare_report(self):
         report = {}
@@ -554,6 +561,33 @@ class Benchmarker(object):
         ]
         return benchmarks if not only_one else [benchmarks[0]]
 
+    def _get_formula_basename_from_benchmark(self, benchmark):
+        return "modgen_gen_{}.cnf".format("_".join(benchmark["parameter"]))
+
+    def get_formula_for_benchmark(self, benchmark):
+        """Return path to formula file that matches the file we are looking for."""
+
+        if not self.pre_gerated_formula_directory:
+            raise ValueError(
+                "Cannot extract pre-generated formulas if no directory is given"
+            )
+
+        basename = self._get_formula_basename_from_benchmark(benchmark)
+
+        log.debug(
+            "Look for formula file %s in directory %s",
+            basename,
+            self.pre_gerated_formula_directory,
+        )
+        full_path = os.path.join(self.pre_gerated_formula_directory, basename)
+
+        if not os.path.exists(full_path):
+            raise ValueError(
+                f"Pregenerated formula {basename} does not exist in given directory"
+            )
+
+        return full_path
+
     def _detect_cores(self):
         if self.relevant_cores:
             return self.relevant_cores
@@ -574,6 +608,7 @@ class Benchmarker(object):
             benchmarks = self._get_benchmarks(only_one=lite)
             relevant_cores = self._detect_cores()
 
+            # in case we generate the formulas, re-use the same file
             formula_path = os.path.join(self.BASE_WORK_DIR, "input.cnf")
             output_path = os.path.join(self.BASE_WORK_DIR, "output.log")
 
@@ -584,10 +619,19 @@ class Benchmarker(object):
                     break
 
                 log.info("Solving benchmark %r", benchmark)
-                self.generator.generate(formula_path, benchmark["parameter"])
+                if not self.pre_gerated_formula_directory:
+                    self.generator.generate(formula_path, benchmark["parameter"])
+                    if self.dump_dir:
+                        basename = self._get_formula_basename_from_benchmark(benchmark)
+                        full_output_path = os.path.join(self.dump_dir, basename)
+                        if not os.path.exists(full_output_path):
+                            log.debug("Store input file as %s", full_output_path)
+                            shutil.copyfile(formula_path, full_output_path)
+                else:
+                    formula_path = self.get_formula_for_benchmark(benchmark)
                 benchmark_md5_hash = get_md5_checksum(formula_path)
                 log.debug(
-                    "Generated benchmark with hash sum: %s with parameters %r",
+                    "Used benchmark has hash sum: %s, based on parameters %r",
                     benchmark_md5_hash,
                     benchmark["parameter"],
                 )
@@ -904,6 +948,14 @@ def parse_args():
         default=None,
         type=str,
         help="Write all solver output to the given directory",
+    )
+
+    parser.add_argument(
+        "-I",
+        "--pre-gerated-formula-directory",
+        default=None,
+        type=str,
+        help="Parse CNFs from given directory, instead of generating them",
     )
     parser.add_argument(
         "-l",
@@ -1243,12 +1295,21 @@ def main():
 
     output_dir = args.get("dump_dir")
     output_dir = output_dir if output_dir is not None else zipdump.dir()
+    # make sure we use an absolute path for the provided input
+    pre_gerated_formula_directory = args.get("pre_gerated_formula_directory")
+    pre_gerated_formula_directory = (
+        None
+        if pre_gerated_formula_directory is None
+        else os.path.realpath(pre_gerated_formula_directory)
+    )
+    # create benchmarking object
     benchmarker = Benchmarker(
         solver=satsolver,
         generator=generator,
         used_user_tools=used_user_tools,
         container_id=container_id if args.get("docker_runtime", False) else None,
         dump_dir=output_dir,
+        pre_gerated_formula_directory=pre_gerated_formula_directory,
     )
     if zipdump.dir() is not None and zipdump.dir() != output_dir:
         shutil.copytree(output_dir, zipdump.dir(), dirs_exist_ok=True)
