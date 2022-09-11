@@ -1083,7 +1083,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--sat-commit", default="v3.3.1", help="Use this commit of the SAT solver"
+        "--sat-commit", default="v3.3.2", help="Use this commit of the SAT solver"
     )
     parser.add_argument("--sat-compiler", default=None, help="Use this compiler as CXX")
     parser.add_argument(
