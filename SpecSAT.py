@@ -27,6 +27,7 @@ from statistics import variance
 # Create logger
 log = logging.getLogger(__name__)
 
+DOCKER_NETWORK = []
 FAST_WORK_DIR = tempfile.TemporaryDirectory(
     dir=None if sys.platform == "darwin" else "/dev/shm"
 )
@@ -52,19 +53,20 @@ def get_thp_status():
     return "unknown"
 
 
-def build_docker_container():
+def build_docker_container(dockerfile_dir=None):
     """Build docker container, and return hash."""
     log.info("Building docker container")
-    cmd = [
-        "docker",
-        "build",
-        "-q",
-        "-f",
-        "Dockerfile",
-        os.path.dirname(os.path.realpath(__file__)),
-    ]
-    log.debug("Using command %r to build docker container", cmd)
-    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    dockerfile_dir = (
+        dockerfile_dir
+        if dockerfile_dir is not None
+        else os.path.dirname(os.path.realpath(__file__))
+    )
+    cmd = ["docker", "build"] + DOCKER_NETWORK + ["-q", "."]
+    cwd = dockerfile_dir
+    log.debug("Using command %r to build docker container, in %s", cmd, cwd)
+    process = subprocess.run(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     if process.returncode != 0:
         log.error("Command %r failed with status %d", cmd, process.returncode)
         print("STDOUT: ", process.stdout.decode("utf_8"))
@@ -73,37 +75,42 @@ def build_docker_container():
     return process.stdout.strip().decode("utf-8")
 
 
-def construct_docker_run_command(container_id, work_dir=None):
+def construct_docker_run_command(container_id, work_dir=None, extra_env=None):
     """Create cmd to jail with docker, an only mount work dir and /dev/shm."""
     base_id = container_id.split(":")[1]
     log.debug("Docker command with work_dir '%s'", work_dir)
     work_dir = work_dir if work_dir else os.getcwd()
-    run_command = [
-        "docker",
-        "run",
-        "--rm",
-        "-e",
-        f'USER="{os.getlogin()}',
-        f"-u={os.getuid()}",
-        "-v",
-        f"{work_dir}:{work_dir}",
-        "-v",
-        "/dev/shm:/dev/shm",
-        "-w",
-        f"{work_dir}",
-        base_id,
-    ]
+    env_list = []
+    if extra_env is not None:
+        for e in extra_env:
+            env_list += ["-e", e]
+    run_command = (
+        ["docker", "run"]
+        + DOCKER_NETWORK
+        + ["--rm", "-e", f'USER="{os.getlogin()}']
+        + env_list
+        + [
+            f"-u={os.getuid()}",
+            "-v",
+            f"{work_dir}:{work_dir}",
+            "-v",
+            "/dev/shm:/dev/shm",
+            "-w",
+            f"{work_dir}",
+            base_id,
+        ]
+    )
     return run_command
 
 
-def get_container_call(container_id, call, **kwargs):
+def get_container_call(container_id, call, extra_env=None, **kwargs):
     """Create full cmd, consider kwargs content wrt cwd."""
     if container_id is None:
         full_call = call
     else:
         # Jail with container, if requested
         cmd_prefix = construct_docker_run_command(
-            container_id, work_dir=kwargs.get("cwd", os.getcwd())
+            container_id, work_dir=kwargs.get("cwd", os.getcwd()), extra_env=extra_env
         )
         full_call = cmd_prefix + call
         log.debug("Prepare full call %r", full_call)
@@ -123,12 +130,25 @@ def set_hour_timeout():
     resource.setrlimit(resource.RLIMIT_CPU, (3600, 3600))
 
 
-def run_silently(container_id, call, **kwargs):
+def get_env_with_extra(extra_env=None):
+    runenv = dict(os.environ)
+    if extra_env is not None:
+        for item in extra_env:
+            log.debug("Add/update env item %r", item)
+            runenv[item.split("=")[0]] = "=".join(item.split("=")[1:])
+    return runenv
+
+
+def run_silently(container_id, call, extra_env=None, **kwargs):
     """Run command, an donly print output in case of failure."""
     log.debug("Silently executing call %r (with args %r)", call, kwargs)
 
     # Jail with container, if requested
-    full_call = get_container_call(container_id=container_id, call=call, **kwargs)
+    full_call = get_container_call(
+        container_id=container_id, call=call, extra_env=extra_env, **kwargs
+    )
+
+    runenv = get_env_with_extra(extra_env)
 
     process = subprocess.run(
         full_call,
@@ -136,6 +156,7 @@ def run_silently(container_id, call, **kwargs):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         preexec_fn=set_hour_timeout,
+        env=runenv,
     )
     if process.returncode != 0:
         log.error("Command %r failed with status %d", full_call, process.returncode)
@@ -184,10 +205,16 @@ def get_md5_checksum(filename):
         return hashlib.md5(bytes).hexdigest()
 
 
-def measure_call(call, output_file, container_id=None, expected_code=None):
+def measure_call(
+    call, output_file, container_id=None, expected_code=None, extra_env=None
+):
     """Run the given command, return measured performance data."""
     # Jail with container, if requested
-    full_call = get_container_call(container_id=container_id, call=call)
+    full_call = get_container_call(
+        container_id=container_id, call=call, extra_env=extra_env
+    )
+
+    runenv = get_env_with_extra(extra_env)
 
     pre_stats = os.times()
     # Note: using a docker jail here reduces the precision of the measurement
@@ -196,12 +223,11 @@ def measure_call(call, output_file, container_id=None, expected_code=None):
         stdout=output_file,
         stderr=subprocess.DEVNULL,
         preexec_fn=set_hour_timeout,
+        env=runenv,
     )
     post_stats = os.times()
     if expected_code is not None and process.returncode != expected_code:
-        log.error("Detected unexpected solver behavior, printing output")
-        print("STDOUT: ", process.stdout.decode("utf_8"))
-        print("STDERR: ", process.stderr.decode("utf_8"))
+        log.error("Detected unexpected solver behavior when running: %r", full_call)
     return {
         "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
         "wall_time_s": post_stats[4] - pre_stats[4],
@@ -288,6 +314,7 @@ class SATsolver(object):
         container_id=None,
         mode=None,
         solver_location=None,
+        use_solver_docker=False,
     ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.build_command = None
@@ -298,6 +325,7 @@ class SATsolver(object):
         self.workdir = tempfile.TemporaryDirectory(
             prefix="specsat_solver", dir=os.getcwd()
         )
+        self.use_solver_docker = use_solver_docker
 
         if solver_location is None:
             self.solverdir = os.path.join(self.workdir.name, self.NAME)
@@ -353,8 +381,12 @@ class SATsolver(object):
         self.log.debug(
             "Building solver with: %r in cwd: '%s'", self.build_command, self.solverdir
         )
+        build_container_id = self.container_id
+        if self.use_solver_docker:
+            self.log.debug("Build solver with its own Dockerfile...")
+            build_container_id = build_docker_container(dockerfile_dir=self.solverdir)
         run_silently(
-            container_id=self.container_id, call=self.build_command, cwd=self.solverdir
+            container_id=build_container_id, call=self.build_command, cwd=self.solverdir
         )
         self.solver = os.path.join(self.solverdir, *self.binary)
 
@@ -457,7 +489,8 @@ class Benchmarker(object):
         used_user_tools,
         container_id=None,
         dump_dir=None,
-        pre_gerated_formula_directory=None,
+        pre_generated_formula_directory=None,
+        measure_extra_env=None,
     ):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.debug("Get SAT Solver")
@@ -473,7 +506,8 @@ class Benchmarker(object):
             if not os.path.exists(self.dump_dir):
                 log.info("Creating output dump dir '%s'", self.dump_dir)
                 os.makedirs(self.dump_dir)
-        self.pre_gerated_formula_directory = pre_gerated_formula_directory
+        self.pre_generated_formula_directory = pre_generated_formula_directory
+        self.measure_extra_env = measure_extra_env
 
     def _prepare_report(self):
         report = {}
@@ -567,7 +601,7 @@ class Benchmarker(object):
     def get_formula_for_benchmark(self, benchmark):
         """Return path to formula file that matches the file we are looking for."""
 
-        if not self.pre_gerated_formula_directory:
+        if not self.pre_generated_formula_directory:
             raise ValueError(
                 "Cannot extract pre-generated formulas if no directory is given"
             )
@@ -577,9 +611,9 @@ class Benchmarker(object):
         log.debug(
             "Look for formula file %s in directory %s",
             basename,
-            self.pre_gerated_formula_directory,
+            self.pre_generated_formula_directory,
         )
-        full_path = os.path.join(self.pre_gerated_formula_directory, basename)
+        full_path = os.path.join(self.pre_generated_formula_directory, basename)
 
         if not os.path.exists(full_path):
             raise ValueError(
@@ -619,7 +653,7 @@ class Benchmarker(object):
                     break
 
                 log.info("Solving benchmark %r", benchmark)
-                if not self.pre_gerated_formula_directory:
+                if not self.pre_generated_formula_directory:
                     self.generator.generate(formula_path, benchmark["parameter"])
                     if self.dump_dir:
                         basename = self._get_formula_basename_from_benchmark(benchmark)
@@ -674,13 +708,14 @@ class Benchmarker(object):
                         cores,
                         solve_call,
                     )
-
+                    log.debug("Extra env for solving: %r", self.measure_extra_env)
                     with open(output_path, "w") as output_file:
                         solve_result = measure_call(
                             solve_call,
                             output_file,
                             container_id=self.container_id,
                             expected_code=benchmark["expected_status"],
+                            extra_env=self.measure_extra_env,
                         )
                     solve_result["validated"] = None
                     solve_result["conflicts"] = self.solver.get_conflicts_from_log(
@@ -982,6 +1017,13 @@ def parse_args():
         help="Jail measurement with docker (independent of build settings)",
     )
     parser.add_argument(
+        "-H",
+        "--docker-host-network",
+        default=False,
+        action="store_true",
+        help="Use host network for docker commands",
+    )
+    parser.add_argument(
         "-n",
         "--nick-name",
         default=None,
@@ -1041,7 +1083,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--sat-commit", default="v3.3.1", help="Use this commit of the SAT solver"
+        "--sat-commit", default="v3.3.2", help="Use this commit of the SAT solver"
     )
     parser.add_argument("--sat-compiler", default=None, help="Use this compiler as CXX")
     parser.add_argument(
@@ -1050,10 +1092,22 @@ def parse_args():
         help="Add this string to CXXFLAGS and LDFLAGS",
     )
     parser.add_argument(
+        "--sat-measure-extra-env",
+        default=None,
+        action="append",
+        help="Add this value to the environment, also inside docker (of the form key=value)",
+    )
+    parser.add_argument(
         "--sat-mode",
         default="release",
         choices=["release", "debug"],
         help="Use solver in release or debug mode",
+    )
+    parser.add_argument(
+        "--sat-use-solver-docker",
+        default=False,
+        action="store_true",
+        help="Compile SAT solver using it's local Dockerfile",
     )
     parser.add_argument(
         "-S",
@@ -1181,6 +1235,7 @@ def build_tools(args, container_id=None):
             container_id=container_id,
             mode=args.get("sat_mode"),
             solver_location=solver_location,
+            use_solver_docker=args.get("sat_use_solver_docker"),
         )
     return (
         satsolver,
@@ -1278,6 +1333,10 @@ def main():
         print("Version: {}".format(VERSION))
         return 0
 
+    if args.get("docker_host_network"):
+        log.debug("Using host network for docker")
+        DOCKER_NETWORK = ["--network=host"]
+
     # prepare storing all data in a zip file
     zipdump = TarXZDump(args.get("zip"))
 
@@ -1296,11 +1355,11 @@ def main():
     output_dir = args.get("dump_dir")
     output_dir = output_dir if output_dir is not None else zipdump.dir()
     # make sure we use an absolute path for the provided input
-    pre_gerated_formula_directory = args.get("pre_gerated_formula_directory")
-    pre_gerated_formula_directory = (
+    pre_generated_formula_directory = args.get("pre_generated_formula_directory")
+    pre_generated_formula_directory = (
         None
-        if pre_gerated_formula_directory is None
-        else os.path.realpath(pre_gerated_formula_directory)
+        if pre_generated_formula_directory is None
+        else os.path.realpath(pre_generated_formula_directory)
     )
     # create benchmarking object
     benchmarker = Benchmarker(
@@ -1309,7 +1368,8 @@ def main():
         used_user_tools=used_user_tools,
         container_id=container_id if args.get("docker_runtime", False) else None,
         dump_dir=output_dir,
-        pre_gerated_formula_directory=pre_gerated_formula_directory,
+        pre_generated_formula_directory=pre_generated_formula_directory,
+        measure_extra_env=args.get("sat_measure_extra_env"),
     )
     if zipdump.dir() is not None and zipdump.dir() != output_dir:
         shutil.copytree(output_dir, zipdump.dir(), dirs_exist_ok=True)
