@@ -31,6 +31,21 @@ report, as well as all solver output, will be added to an archive tar file.
 ./SpecSAT.sh -A "" -i 3 -Z archive.tar.xz
 ```
 
+A more complex example, to use more capabilities of the used SAT solver and to
+better test the limits of the system, is to compile the SAT solver using its own
+dockerfile (so that it links against a recent libc), and then use transparent
+huge pages via madvise in the SAT solver. Finally, for restricted networks, the
+docker commands can use the host network. The following command achieves this,
+and stores the report in the specified file:
+
+```
+    ./SpecSAT.py -d \
+        --sat-measure-extra-env=GLIBC_TUNABLES=glibc.malloc.hugetlb=1 \
+        --sat-use-solver-docker -u \
+        -H \
+        -r report.json
+```
+
 ## Usage
 
 To improve the efficiency of the used solver, a different compiler for the
