@@ -1555,7 +1555,7 @@ def run_assess_environment(args):
                         preexec_fn=set_5m_timeout,
                     )
 
-                    stdout, _ = process.stdout.decode()
+                    stdout = process.stdout.decode()
                     log.debug(
                         "Call output %s with return code %d", stdout, process.returncode
                     )
@@ -1565,6 +1565,9 @@ def run_assess_environment(args):
                         "conflicts": conflicts,
                         "exit_code": process.returncode,
                     }
+                # Cleanup this iteration
+                os.remove(zipped_cnf)
+
     except Exception as e:
         log.exception("Stopped call with exception: %r", e)
     log.info("Full report: %s", json.dumps(assess_report, indent=2))

@@ -1,0 +1,24 @@
+name: Run on Linux
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  Linux:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+
+    - name: Run script in assess mode
+      run: |
+          ./SpecSAT.py --debug assess
