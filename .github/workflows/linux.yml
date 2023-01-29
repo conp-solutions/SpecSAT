@@ -20,11 +20,11 @@ jobs:
       run: python3 -m pip install --upgrade --user -U -r requirements.txt
 
     - name: run CI script
-      run: ./SpecSAT.py -d -u
+      run: ./SpecSAT.py -d specsat -u
 
     - name: run script in light mode, and dumping everything to a single archive
       run: |
-          ./SpecSAT.py -l -u -Z dump.tar.xz
+          ./SpecSAT.py specsat -l -u -Z dump.tar.xz
           tar -tJf dump.tar.xz &> /dev/null
           ls -l dump.tar.xz
 
@@ -42,11 +42,11 @@ jobs:
       run: python3 -m pip install --upgrade --user -U -r requirements.txt
 
     - name: run CI script
-      run: ./SpecSAT.py -d -u
+      run: ./SpecSAT.py -d specsat -u
 
     - name: run script in light mode, and dumping everything to a single archive
       run: |
-          ./SpecSAT.py -l -u -Z dump.tar.xz
+          ./SpecSAT.py specsat -l -u -Z dump.tar.xz
           tar -tJf dump.tar.xz &> /dev/null
           ls -l dump.tar.xz
 
@@ -64,10 +64,10 @@ jobs:
       run: python3 -m pip install --upgrade --user -U -r requirements.txt
 
     - name: run CI script
-      run: ./SpecSAT.py -d -u
+      run: ./SpecSAT.py -d specsat -u
 
     - name: run script in light mode, and dumping everything to a single archive
       run: |
-          ./SpecSAT.py -l -u -Z dump.tar.xz
+          ./SpecSAT.py specsat -l -u -Z dump.tar.xz
           tar -tJf dump.tar.xz &> /dev/null
           ls -l dump.tar.xz

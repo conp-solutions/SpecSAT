@@ -971,6 +971,34 @@ def parse_args():
         "-d", "--debug", default=False, action="store_true", help="Log debug output"
     )
     parser.add_argument(
+        "-v",
+        "--version",
+        default=False,
+        action="store_true",
+        help="Print version of the tool",
+    )
+
+    sub_parsers = parser.add_subparsers(help="sub-command help")
+    parser_add_specsat_args(sub_parsers)
+    parser_add_assess_args(sub_parsers)
+
+    args = parser.parse_args()
+    return vars(args)
+
+
+def parser_add_assess_args(sub_parsers):
+    parser = sub_parsers.add_parser(
+        "assess", help="Assess solvers in current environment wrt being stable"
+    )
+    parser.set_defaults(func=run_assess_environment)
+
+
+def parser_add_specsat_args(sub_parsers):
+
+    parser = sub_parsers.add_parser("specsat", help="Benchmark current environment")
+    parser.set_defaults(func=run_specsat)
+
+    parser.add_argument(
         "-A",
         "--auto-archive-report",
         default=None,
@@ -1037,13 +1065,6 @@ def parse_args():
         "--report",
         default=None,
         help="Write full report to this file, including raw data per benchmark.",
-    )
-    parser.add_argument(
-        "-v",
-        "--version",
-        default=False,
-        action="store_true",
-        help="Print version of the tool",
     )
     parser.add_argument(
         "--verbosity", default=0, type=int, help="Set the verbosity level"
@@ -1116,9 +1137,6 @@ def parse_args():
         type=str,
         help="Location of SAT solver to be used",
     )
-
-    args = parser.parse_args()
-    return vars(args)
 
 
 def write_report(report, args, tarxzdump):
@@ -1332,6 +1350,22 @@ def main():
     if args.get("version"):
         print("Version: {}".format(VERSION))
         return 0
+
+    log.debug("args: %r", args)
+
+    function = args["func"]
+    ret = function(args)
+    log.info("Finished command with %d", ret)
+
+
+def run_assess_environment(args):
+    print("Run assessing environment with args %r", args)
+
+    raise NotImplementedError("Assessing environment not available")
+
+
+def run_specsat(args):
+    log.info("Run run_specsat, with args %r", args)
 
     if args.get("docker_host_network"):
         log.debug("Using host network for docker")
