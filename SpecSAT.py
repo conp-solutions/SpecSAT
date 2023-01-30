@@ -1030,6 +1030,27 @@ def parser_add_assess_args(sub_parsers):
         action="store_true",
         help="Disable jailing with docker (more accuracy, native execution)",
     )
+    parser.add_argument(
+        "-C",
+        "--no-cadical",
+        default=False,
+        action="store_true",
+        help="Do not use CaDiCaL solver",
+    )
+    parser.add_argument(
+        "-K",
+        "--no-kissat",
+        default=False,
+        action="store_true",
+        help="Do not use Kissat",
+    )
+    parser.add_argument(
+        "-M",
+        "--no-mergesat",
+        default=False,
+        action="store_true",
+        help="Do not use MergeSat",
+    )
 
 
 def parser_add_specsat_args(sub_parsers):
@@ -1616,14 +1637,17 @@ def run_assess_environment(args):
         assess_container_id = build_docker_container(dockerfile_dir=dockerfile_dir)
 
     solvers = dict()
-    solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver(
-        docker_container_id=assess_container_id
-    )
-    solvers["kissat_bulky"] = kissat_bulky_solver(
-        docker_container_id=assess_container_id
-    )
-    solvers["mergesat"] = mergesat(docker_container_id=assess_container_id)
-    log.info("Work with solvers: %r", solvers)
+    if not args.get("no_cadical", False):
+        solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver(
+            docker_container_id=assess_container_id
+        )
+    if not args.get("no_kissat", False):
+        solvers["kissat_bulky"] = kissat_bulky_solver(
+            docker_container_id=assess_container_id
+        )
+    if not args.get("no_mergesat", False):
+        solvers["mergesat"] = mergesat(docker_container_id=assess_container_id)
+        log.info("Work with solvers: %r", solvers)
 
     dir = tempfile.TemporaryDirectory()
 
