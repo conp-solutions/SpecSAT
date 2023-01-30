@@ -245,11 +245,15 @@ def measure_call(
     post_stats = os.times()
     if expected_code is not None and process.returncode != expected_code:
         log.error("Detected unexpected solver behavior when running: %r", full_call)
-    return {
-        "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
-        "wall_time_s": post_stats[4] - pre_stats[4],
-        "status_code": process.returncode,
-    }
+    return (
+        {
+            "cpu_time_s": (post_stats[2] + post_stats[3])
+            - (pre_stats[2] + pre_stats[3]),
+            "wall_time_s": post_stats[4] - pre_stats[4],
+            "status_code": process.returncode,
+        },
+        process.stdout,
+    )
 
 
 class CNFgenerator(object):
@@ -727,7 +731,7 @@ class Benchmarker(object):
                     )
                     log.debug("Extra env for solving: %r", self.measure_extra_env)
                     with open(output_path, "w") as output_file:
-                        solve_result = measure_call(
+                        solve_result, _ = measure_call(
                             solve_call,
                             output_file,
                             container_id=self.container_id,
@@ -1660,23 +1664,40 @@ def run_assess_environment(args):
                     full_call = solver.solve_call(zipped_cnf)
                     log.debug("Execute solver call: %r", full_call)
 
-                    process = subprocess.run(
-                        full_call,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        preexec_fn=set_5m_timeout,
-                    )
+                    data = {}
+                    try:
+                        process = subprocess.run(
+                            full_call,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            preexec_fn=set_5m_timeout,
+                        )
 
-                    stdout = process.stdout.decode()
-                    log.debug(
-                        "Call output %s with return code %d", stdout, process.returncode
-                    )
-                    conflicts = solver.get_conflicts(stdout)
+                        data, stdout = measure_call(
+                            full_call,
+                            subprocess.PIPE,
+                            container_id=None,
+                            expected_code=None,
+                            extra_env=None,
+                        )
 
-                    assess_report["benchmarks"][benchmark][solver_name] = {
-                        "conflicts": conflicts,
-                        "exit_code": process.returncode,
-                    }
+                        stdout = process.stdout.decode()
+                        log.debug(
+                            "Call output %s with return code %d",
+                            stdout,
+                            data["status_code"],
+                        )
+                        data["conflicts"] = solver.get_conflicts(stdout)
+                    except Exception as e:
+                        log.debug("Failed solver execution with exception %r", e)
+                        log.error(
+                            "Failed to execute solver %s on benchmark %s",
+                            solver_name,
+                            zipped_cnf,
+                        )
+                        return_code = 1
+                    assess_report["benchmarks"][benchmark][solver_name] = data
+
                 # Cleanup this iteration
                 os.remove(zipped_cnf)
 
