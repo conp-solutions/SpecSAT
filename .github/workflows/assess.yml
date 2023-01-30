@@ -1,4 +1,4 @@
-name: Run on Linux
+name: Run Assessing Environment on Linux
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
       - '**'
 
 jobs:
-  Linux:
+  Linux-docker:
 
     runs-on: ubuntu-22.04
 
@@ -22,3 +22,19 @@ jobs:
     - name: Run script in assess mode
       run: |
           ./SpecSAT.py --debug assess
+
+  Linux-no-docker:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+    - name: Run script in assess mode without docker
+      run: |
+          ./SpecSAT.py --debug assess -u
