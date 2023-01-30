@@ -274,3 +274,17 @@ Full command to create relevant output for investigation:
 ```
 ./SpecSAT.sh -d specsat -A "" -i 3 -Z archive.tar.xz
 ```
+
+## Assessing Environment
+
+Some SAT solvers behave differently on different platforms. To be able to check
+how solvers behave, the 'assess' command helps identifying these issues, by
+checking the number of conflicts used for the same CNF, and statically linking
+the SAT solvers, building them in a docker container, to ensure a stable
+environment.
+
+The following command allows to generate such a report for the given platform:
+
+```
+./SpecSAT.py assess -o assess.json
+```
