@@ -1541,6 +1541,7 @@ def run_assess_environment(args):
 
     max_benchmarks = args.get("max_benchmarks", -1)
     output_file = args.get("output")
+    return_code = 0
 
     if max_benchmarks != -1:
         log.info("Run on the first %d benchmarks", max_benchmarks)
@@ -1681,6 +1682,7 @@ def run_assess_environment(args):
 
     except Exception as e:
         log.exception("Stopped call with exception: %r", e)
+        return_code = 1
     log.info("Full report: %s", json.dumps(assess_report, indent=2))
 
     if output_file:
@@ -1688,7 +1690,7 @@ def run_assess_environment(args):
         with open(output_file, "w") as f:
             json.dump(assess_report, f, indent=4, sort_keys=True)
 
-    return 0
+    return return_code
 
 
 def run_specsat(args):
