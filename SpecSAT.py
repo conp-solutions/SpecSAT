@@ -1019,6 +1019,13 @@ def parser_add_assess_args(sub_parsers):
     parser.add_argument(
         "-o", "--output", default=None, help="Write output report to this file."
     )
+    parser.add_argument(
+        "-u",
+        "--no-docker",
+        default=False,
+        action="store_true",
+        help="Disable jailing with docker (more accuracy, native execution)",
+    )
 
 
 def parser_add_specsat_args(sub_parsers):
@@ -1595,10 +1602,22 @@ def run_assess_environment(args):
 
     # TODO: go to working directory
 
+    assess_container_id = None
+    if not args.get("no_docker", True):
+        assess_artifacts_dir = "assess_artifacts"
+        specsat_dir = os.path.dirname(os.path.abspath(__file__))
+        dockerfile_dir = os.path.join(specsat_dir, assess_artifacts_dir)
+        log.info("Building assess docker container from directory %s", dockerfile_dir)
+        assess_container_id = build_docker_container(dockerfile_dir=dockerfile_dir)
+
     solvers = dict()
-    solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver()
-    solvers["kissat_bulky"] = kissat_bulky_solver()
-    solvers["mergesat"] = mergesat()
+    solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver(
+        docker_container_id=assess_container_id
+    )
+    solvers["kissat_bulky"] = kissat_bulky_solver(
+        docker_container_id=assess_container_id
+    )
+    solvers["mergesat"] = mergesat(docker_container_id=assess_container_id)
     log.info("Work with solvers: %r", solvers)
 
     dir = tempfile.TemporaryDirectory()
