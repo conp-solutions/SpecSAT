@@ -215,7 +215,7 @@ def git_descibe(dir):
     """Get git describe output for a directory."""
 
     git_describe_call = ["git", "describe", "--tags"]
-    log.debug("Get solver version with: %r", git_describe_call)
+    log.debug("Get solver version with: %r (in dir: %r)", git_describe_call, dir)
     process = subprocess.run(
         git_describe_call, cwd=dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
@@ -1009,6 +1009,17 @@ def parser_add_assess_args(sub_parsers):
     )
     parser.set_defaults(func=run_assess_environment)
 
+    parser.add_argument(
+        "-m",
+        "--max-benchmarks",
+        default=-1,
+        type=int,
+        help="How many benchmarks to use",
+    )
+    parser.add_argument(
+        "-o", "--output", default=None, help="Write output report to this file."
+    )
+
 
 def parser_add_specsat_args(sub_parsers):
 
@@ -1385,7 +1396,7 @@ def download_hashed_file(file_hash):
     run_silently(None, download_command)
 
 
-class git_helper(object):
+class SAT_solver_git(object):
 
     CLONE_CMD = ["git", "clone"]
     CHECKOUT_CMD = ["git", "checkout"]
@@ -1393,8 +1404,37 @@ class git_helper(object):
     def __init__(self):
         pass
 
+    def initialize_solver(self, docker_container_id: str = None, dir: str = None):
+        self._temp_dir = None if dir else tempfile.TemporaryDirectory()
+        self._dir = dir if dir else self._temp_dir.name
+        self.container_id = docker_container_id
+        self.binary_path = self.download_and_compile()
+        self.git_describe = git_descibe(os.path.join(self._dir, self.SOLVER_NAME))
 
-class cadical_watchsat_lto_solver(git_helper):
+    def download_and_compile(self):
+        """Download and build, only works if other fields are given in inherited objects."""
+        log.debug("Download and build %s in directory %s", self.SOLVER_NAME, self._dir)
+        with pushd(self._dir):
+            # Clone
+            cmd = self.CLONE_CMD[0:]
+            cmd += [self.REPO, self.SOLVER_NAME]
+            run_silently(self.container_id, call=cmd)
+
+            # In repository,
+            with pushd(self.SOLVER_NAME):
+                # Checkout
+                checkout_cmd = self.CHECKOUT_CMD[0:]
+                checkout_cmd.append(self.COMMIT)
+                run_silently(self.container_id, call=checkout_cmd)
+
+                for command in self.BUILD_COMMANDS:
+                    run_silently(self.container_id, call=command)
+
+                # Return path to actual binary
+                return os.path.realpath(self.BINARY_PATH)
+
+
+class cadical_watchsat_lto_solver(SAT_solver_git):
 
     REPO = "https://github.com/conp-solutions/cadical"
     COMMIT = "301cc5a8290801ff64867ba4673287411ef2432d"
@@ -1402,31 +1442,8 @@ class cadical_watchsat_lto_solver(git_helper):
     SOLVER_NAME = "cadical-watchsat-flto"
     BINARY_PATH = "build/cadical"
 
-    def __init__(self, docker_container_id: str = None):
-
-        self.container_id = docker_container_id
-        self.binary_path = self.download_and_compile()
-        self.git_describe = git_descibe(self.SOLVER_NAME)
-        pass
-
-    def download_and_compile(self):
-        # Clone
-        cmd = self.CLONE_CMD[0:]
-        cmd += [self.REPO, self.SOLVER_NAME]
-        run_silently(self.container_id, call=cmd)
-
-        # In repository,
-        with pushd(self.SOLVER_NAME):
-            # Checkout
-            checkout_cmd = self.CHECKOUT_CMD[0:]
-            checkout_cmd.append(self.COMMIT)
-            run_silently(self.container_id, call=checkout_cmd)
-
-            for command in self.BUILD_COMMANDS:
-                run_silently(self.container_id, call=command)
-
-            # Return path to actual binary
-            return os.path.realpath(self.BINARY_PATH)
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
 
     def solve_call(self, cnf_file):
         return [self.binary_path, cnf_file]
@@ -1439,15 +1456,87 @@ c chronological:              2658        36.29 %  of conflicts
 c conflicts:                  7325     33956.21    per second
         """
         conflicts = -1
-        for line in stdout:
+        for line in stdout.splitlines():
             if line.startswith("c conflicts:"):
+                conflicts = int(line.split()[2])
+        # return the last hit for this pattern
+        return conflicts
+
+
+class kissat_bulky_solver(SAT_solver_git):
+
+    REPO = "https://github.com/arminbiere/kissat.git"
+    COMMIT = "c5cce1b9b35bc74566f192c43620bff03e4a9ff6"
+    BUILD_COMMANDS = [["./configure", "-static"], ["make", "-j", "8"]]
+    SOLVER_NAME = "kissat"
+    BINARY_PATH = "build/kissat"
+
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
+
+    def solve_call(self, cnf_file):
+        return [self.binary_path, cnf_file]
+
+    def get_conflicts(self, stdout):
+        """Extract conflicts from output, looking like:
+c ---- [ statistics ] --------------------------------------------------------
+c
+c backbone_implied:                        94                3.36 per unit
+c backbone_units:                          28                2 %  variables
+c clauses_learned:                      10895               87 %  conflicts
+c conflicts:                            12562            52479.43 per second
+c decisions:                            24405                1.94 per conflict
+        """
+        conflicts = -1
+        for line in stdout.splitlines():
+            if line.startswith("c conflicts:"):
+                conflicts = int(line.split()[2])
+        # return the last hit for this pattern
+        return conflicts
+
+
+class mergesat(SAT_solver_git):
+
+    REPO = "https://github.com/conp-solutions/mergesat.git"
+    COMMIT = "258afd6ae3320a2cdea893a23c9cb8b2f093bafe"
+    BUILD_COMMANDS = [["make", "r", "-j", "8"]]
+    SOLVER_NAME = "mergesat"
+    BINARY_PATH = "build/release/bin/mergesat"
+
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
+
+    def solve_call(self, cnf_file):
+        return [self.binary_path, "-no-lib-math", cnf_file]
+
+    def get_conflicts(self, stdout):
+        """Extract conflicts from output, looking like:
+c ===============================================================================
+c simplification        : 4 elim.vars,  2 subsumed
+c strengthening         : 3 lits, 0 all-candidates, 0 all-used
+c restarts              : 12
+c conflicts             : 5473           (23513 /sec)
+c decisions             : 16558          (0.00 % random) (71137 /sec)
+c propagations          : 590045         (2534971 /sec)
+c conflict literals     : 96779          (22.89 % deleted)
+        """
+        conflicts = -1
+        for line in stdout.splitlines():
+            if line.startswith("c conflicts             : "):
                 conflicts = int(line.split()[3])
         # return the last hit for this pattern
         return conflicts
 
 
 def run_assess_environment(args):
-    print("Run assessing environment with args %r", args)
+
+    log.debug("Run assessing environment with args %r", args)
+
+    max_benchmarks = args.get("max_benchmarks", -1)
+    output_file = args.get("output")
+
+    if max_benchmarks != -1:
+        log.info("Run on the first %d benchmarks", max_benchmarks)
 
     """
     Check CaDiCaL-watchsat-lto, Kissat-bulky and MergeSat on the first formulas that took 3600 seconds
@@ -1508,9 +1597,8 @@ def run_assess_environment(args):
 
     solvers = dict()
     solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver()
-    # kissat = kissat_bulky_solver()
-    # mergesat = mergesat_solver()
-
+    solvers["kissat_bulky"] = kissat_bulky_solver()
+    solvers["mergesat"] = mergesat()
     log.info("Work with solvers: %r", solvers)
 
     dir = tempfile.TemporaryDirectory()
@@ -1518,16 +1606,20 @@ def run_assess_environment(args):
     assess_report["solvers"] = {}
     for solver_name, solver in solvers.items():
         md5_sum = get_md5_checksum(solver.binary_path)
-        assess_report["solvers"] = {
-            "name": solver_name,
+        assess_report["solvers"][solver_name] = {
             "md5sum": md5_sum,
             "git_describe": solver.git_describe,
-            # TODO: git describe
         }
 
     assess_report["benchmarks"] = {}
+    assessed_benchmarks = 0
     try:
         for benchmark in benchmarks:
+
+            assessed_benchmarks += 1
+            if max_benchmarks != -1 and assessed_benchmarks > max_benchmarks:
+                log.info("Stopping assessment, as we reached specified maximum")
+                break
 
             with pushd(dir.name):
                 download_hashed_file(benchmark)
@@ -1571,6 +1663,11 @@ def run_assess_environment(args):
     except Exception as e:
         log.exception("Stopped call with exception: %r", e)
     log.info("Full report: %s", json.dumps(assess_report, indent=2))
+
+    if output_file:
+        log.info("Writing assessment report to file: %s", output_file)
+        with open(output_file, "w") as f:
+            json.dump(assess_report, f, indent=4, sort_keys=True)
 
     return 0
 
