@@ -1720,6 +1720,7 @@ def run_assess_environment(args):
                             zipped_cnf,
                         )
                         return_code = 1
+                    log.info("Solver '%s' solver '%s' with data %r", solver_name, zipped_cnf, data)
                     assess_report["benchmarks"][benchmark][solver_name] = data
 
                 # Cleanup this iteration
