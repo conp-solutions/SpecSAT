@@ -28,7 +28,7 @@ automatically be written into the 'archive' directory. Finally, the generated
 report, as well as all solver output, will be added to an archive tar file.
 
 ```
-./SpecSAT.sh -A "" -i 3 -Z archive.tar.xz
+./SpecSAT.sh specsat -A "" -i 3 -Z archive.tar.xz
 ```
 
 A more complex example, to use more capabilities of the used SAT solver and to
@@ -40,6 +40,7 @@ and stores the report in the specified file:
 
 ```
     ./SpecSAT.py -d \
+        specsat \ 
         --sat-measure-extra-env=GLIBC_TUNABLES=glibc.malloc.hugetlb=1 \
         --sat-use-solver-docker -u \
         -H \
@@ -62,7 +63,7 @@ The measured data can be strored to report files, where also a full report with
 the native results can be stored:
 
 ```
-./SpecSAT.py -r full-report.json -o output.json
+./SpecSAT.py specsat -r full-report.json -o output.json
 ```
 
 ### Running with no docker available
@@ -80,7 +81,7 @@ First, run a lite run, and build the SAT solver in a docker container. Also,
 store the solver in an archive.
 
 ```
-./SpecSAT.py -l -z mergesat.tar.xz -o precompile-report.json
+./SpecSAT.py specsat -l -z mergesat.tar.xz -o precompile-report.json
 ```
 
 #### Run actual measurement with pre-compiled solver
@@ -90,7 +91,7 @@ then forward it to SpecSAT.
 
 ```
 tar xJf mergesat.tar.xz
-./SpecSAT.sh -r full-report.json -o output.json --solver-location mergesat
+./SpecSAT.sh specsat -r full-report.json -o output.json --solver-location mergesat
 ```
 
 Note: the new tool will now complain about using an external solver, and
@@ -124,14 +125,14 @@ environment (via venv). Furthermore, the wrapper supports two command line
 parameters:
 
 ```
-    <some_path>/SpecSAT.sh --run-from-install [args]
+    <some_path>/SpecSAT.sh specsat --run-from-install [args]
 ```
 
 ... will run SpecSAT.py with args `args` in the directory where the tool itself
 is located. This allows to use the tool in e.g. a distributed environment.
 
 ```
-    <some_path>/SpecSAT.sh --force-install [args]
+    <some_path>/SpecSAT.sh specsat --force-install [args]
 ```
 
 ... will run the wrapper, and re-install the python dependencies. This command
@@ -240,7 +241,7 @@ Note: the report is supposed to not contain any personal data. However, before
       making your data public, make sure you checked the details!
 
  0. clone the repository locally
- 1. run the tool, and generate an auto-report, by running `./SpecSAT.sh -A "" -i 3`
+ 1. run the tool, and generate an auto-report, by running `./SpecSAT.sh specsat -A "" -i 3`
  2. create a git branch in your local repository (e.g. `git checkout -b ...`)
  3. add the new report file to the branch
  4. create a pull request in the main repository with your change
@@ -266,10 +267,24 @@ this archive to the github issue.
 
 Submit an issue here: https://github.com/conp-solutions/SpecSAT/issues
 
-Use these parameters to enable debugging and create an archive: `-d -Z specsat.tar.xz`
+Use these parameters to enable debugging and create an archive: `-d specsat -Z specsat.tar.xz`
 
 Full command to create relevant output for investigation:
 
 ```
-./SpecSAT.sh -A "" -d -i 3 -Z archive.tar.xz
+./SpecSAT.sh -d specsat -A "" -i 3 -Z archive.tar.xz
+```
+
+## Assessing Environment
+
+Some SAT solvers behave differently on different platforms. To be able to check
+how solvers behave, the 'assess' command helps identifying these issues, by
+checking the number of conflicts used for the same CNF, and statically linking
+the SAT solvers, building them in a docker container, to ensure a stable
+environment.
+
+The following command allows to generate such a report for the given platform:
+
+```
+./SpecSAT.py assess -o assess.json
 ```

@@ -1,0 +1,51 @@
+name: Run Assessing Environment on Linux
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+
+  Linux-no-docker:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+    - name: Run script in assess mode without docker
+      run: |
+          ./SpecSAT.py assess -u -o assess.json
+
+    - name: Show results
+      run: |
+          cat assess.json
+
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: assess.json
+        path: assess.json
+        retention-days: 5
+
+  Linux-no-docker-kissat:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Install Packages
+      run: sudo apt-get install make python3-setuptools sudo zlib1g-dev
+
+    - uses: actions/checkout@v1
+
+    - name: get python modules
+      run: python3 -m pip install --upgrade --user -U -r requirements.txt
+    - name: Run script in assess mode without docker, only using Kissat
+      run: |
+          ./SpecSAT.py assess -u -C -M

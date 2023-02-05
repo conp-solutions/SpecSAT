@@ -7,6 +7,7 @@ import contextlib
 import copy
 import cpuinfo
 import datetime
+import glob
 import hashlib
 import json
 import logging
@@ -130,6 +131,11 @@ def set_hour_timeout():
     resource.setrlimit(resource.RLIMIT_CPU, (3600, 3600))
 
 
+def set_5m_timeout():
+    """Set max runtime of the calling process to 300 seconds."""
+    resource.setrlimit(resource.RLIMIT_CPU, (300, 300))
+
+
 def get_env_with_extra(extra_env=None):
     runenv = dict(os.environ)
     if extra_env is not None:
@@ -205,6 +211,17 @@ def get_md5_checksum(filename):
         return hashlib.md5(bytes).hexdigest()
 
 
+def git_descibe(dir):
+    """Get git describe output for a directory."""
+
+    git_describe_call = ["git", "describe", "--tags"]
+    log.debug("Get solver version with: %r (in dir: %r)", git_describe_call, dir)
+    process = subprocess.run(
+        git_describe_call, cwd=dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    return process.stdout.strip().decode("utf-8")
+
+
 def measure_call(
     call, output_file, container_id=None, expected_code=None, extra_env=None
 ):
@@ -228,11 +245,15 @@ def measure_call(
     post_stats = os.times()
     if expected_code is not None and process.returncode != expected_code:
         log.error("Detected unexpected solver behavior when running: %r", full_call)
-    return {
-        "cpu_time_s": (post_stats[2] + post_stats[3]) - (pre_stats[2] + pre_stats[3]),
-        "wall_time_s": post_stats[4] - pre_stats[4],
-        "status_code": process.returncode,
-    }
+    return (
+        {
+            "cpu_time_s": (post_stats[2] + post_stats[3])
+            - (pre_stats[2] + pre_stats[3]),
+            "wall_time_s": post_stats[4] - pre_stats[4],
+            "status_code": process.returncode,
+        },
+        process.stdout,
+    )
 
 
 class CNFgenerator(object):
@@ -710,7 +731,7 @@ class Benchmarker(object):
                     )
                     log.debug("Extra env for solving: %r", self.measure_extra_env)
                     with open(output_path, "w") as output_file:
-                        solve_result = measure_call(
+                        solve_result, _ = measure_call(
                             solve_call,
                             output_file,
                             container_id=self.container_id,
@@ -971,6 +992,73 @@ def parse_args():
         "-d", "--debug", default=False, action="store_true", help="Log debug output"
     )
     parser.add_argument(
+        "-v",
+        "--version",
+        default=False,
+        action="store_true",
+        help="Print version of the tool",
+    )
+
+    sub_parsers = parser.add_subparsers(help="sub-command help")
+    parser_add_specsat_args(sub_parsers)
+    parser_add_assess_args(sub_parsers)
+
+    args = parser.parse_args()
+    return vars(args)
+
+
+def parser_add_assess_args(sub_parsers):
+    parser = sub_parsers.add_parser(
+        "assess", help="Assess solvers in current environment wrt being stable"
+    )
+    parser.set_defaults(func=run_assess_environment)
+
+    parser.add_argument(
+        "-m",
+        "--max-benchmarks",
+        default=-1,
+        type=int,
+        help="How many benchmarks to use",
+    )
+    parser.add_argument(
+        "-o", "--output", default=None, help="Write output report to this file."
+    )
+    parser.add_argument(
+        "-u",
+        "--no-docker",
+        default=False,
+        action="store_true",
+        help="Disable jailing with docker (more accuracy, native execution)",
+    )
+    parser.add_argument(
+        "-C",
+        "--no-cadical",
+        default=False,
+        action="store_true",
+        help="Do not use CaDiCaL solver",
+    )
+    parser.add_argument(
+        "-K",
+        "--no-kissat",
+        default=False,
+        action="store_true",
+        help="Do not use Kissat",
+    )
+    parser.add_argument(
+        "-M",
+        "--no-mergesat",
+        default=False,
+        action="store_true",
+        help="Do not use MergeSat",
+    )
+
+
+def parser_add_specsat_args(sub_parsers):
+
+    parser = sub_parsers.add_parser("specsat", help="Benchmark current environment")
+    parser.set_defaults(func=run_specsat)
+
+    parser.add_argument(
         "-A",
         "--auto-archive-report",
         default=None,
@@ -1037,13 +1125,6 @@ def parse_args():
         "--report",
         default=None,
         help="Write full report to this file, including raw data per benchmark.",
-    )
-    parser.add_argument(
-        "-v",
-        "--version",
-        default=False,
-        action="store_true",
-        help="Print version of the tool",
     )
     parser.add_argument(
         "--verbosity", default=0, type=int, help="Set the verbosity level"
@@ -1116,9 +1197,6 @@ def parse_args():
         type=str,
         help="Location of SAT solver to be used",
     )
-
-    args = parser.parse_args()
-    return vars(args)
 
 
 def write_report(report, args, tarxzdump):
@@ -1332,6 +1410,337 @@ def main():
     if args.get("version"):
         print("Version: {}".format(VERSION))
         return 0
+
+    log.debug("args: %r", args)
+
+    function = args["func"]
+    ret = function(args)
+    log.info("Finished command with %d", ret)
+
+
+def download_hashed_file(file_hash):
+    """Retrieve competition file from hash."""
+    download_command = [
+        "wget",
+        "--content-disposition",
+        f"https://gbd.iti.kit.edu/file/{file_hash}",
+    ]
+    run_silently(None, download_command)
+
+
+class SAT_solver_git(object):
+
+    CLONE_CMD = ["git", "clone"]
+    CHECKOUT_CMD = ["git", "checkout"]
+
+    def __init__(self):
+        pass
+
+    def initialize_solver(self, docker_container_id: str = None, dir: str = None):
+        self._temp_dir = None if dir else tempfile.TemporaryDirectory()
+        self._dir = dir if dir else self._temp_dir.name
+        self.container_id = docker_container_id
+        self.binary_path = self.download_and_compile()
+        self.git_describe = git_descibe(os.path.join(self._dir, self.SOLVER_NAME))
+
+    def download_and_compile(self):
+        """Download and build, only works if other fields are given in inherited objects."""
+        log.debug("Download and build %s in directory %s", self.SOLVER_NAME, self._dir)
+        with pushd(self._dir):
+            # Clone
+            cmd = self.CLONE_CMD[0:]
+            cmd += [self.REPO, self.SOLVER_NAME]
+            run_silently(self.container_id, call=cmd)
+
+            # In repository,
+            with pushd(self.SOLVER_NAME):
+                # Checkout
+                checkout_cmd = self.CHECKOUT_CMD[0:]
+                checkout_cmd.append(self.COMMIT)
+                run_silently(self.container_id, call=checkout_cmd)
+
+                for command in self.BUILD_COMMANDS:
+                    run_silently(self.container_id, call=command)
+
+                # Return path to actual binary
+                return os.path.realpath(self.BINARY_PATH)
+
+
+class cadical_watchsat_lto_solver(SAT_solver_git):
+
+    REPO = "https://github.com/conp-solutions/cadical"
+    COMMIT = "301cc5a8290801ff64867ba4673287411ef2432d"
+    BUILD_COMMANDS = [["./configure", "-static"], ["make", "-j", "8"]]
+    SOLVER_NAME = "cadical-watchsat-flto"
+    BINARY_PATH = "build/cadical"
+
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
+
+    def solve_call(self, cnf_file):
+        return [self.binary_path, cnf_file]
+
+    def get_conflicts(self, stdout):
+        """Extract conflicts from output, looking like:
+c --- [ statistics ] ---------------------------------------------------------
+c 
+c chronological:              2658        36.29 %  of conflicts
+c conflicts:                  7325     33956.21    per second
+        """
+        conflicts = -1
+        for line in stdout.splitlines():
+            if line.startswith("c conflicts:"):
+                conflicts = int(line.split()[2])
+        # return the last hit for this pattern
+        return conflicts
+
+
+class kissat_bulky_solver(SAT_solver_git):
+
+    REPO = "https://github.com/arminbiere/kissat.git"
+    COMMIT = "c5cce1b9b35bc74566f192c43620bff03e4a9ff6"
+    BUILD_COMMANDS = [["./configure", "-static"], ["make", "-j", "8"]]
+    SOLVER_NAME = "kissat"
+    BINARY_PATH = "build/kissat"
+
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
+
+    def solve_call(self, cnf_file):
+        return [self.binary_path, cnf_file]
+
+    def get_conflicts(self, stdout):
+        """Extract conflicts from output, looking like:
+c ---- [ statistics ] --------------------------------------------------------
+c
+c backbone_implied:                        94                3.36 per unit
+c backbone_units:                          28                2 %  variables
+c clauses_learned:                      10895               87 %  conflicts
+c conflicts:                            12562            52479.43 per second
+c decisions:                            24405                1.94 per conflict
+        """
+        conflicts = -1
+        for line in stdout.splitlines():
+            if line.startswith("c conflicts:"):
+                conflicts = int(line.split()[2])
+        # return the last hit for this pattern
+        return conflicts
+
+
+class mergesat(SAT_solver_git):
+
+    REPO = "https://github.com/conp-solutions/mergesat.git"
+    COMMIT = "258afd6ae3320a2cdea893a23c9cb8b2f093bafe"
+    BUILD_COMMANDS = [["make", "r", "-j", "8"]]
+    SOLVER_NAME = "mergesat"
+    BINARY_PATH = "build/release/bin/mergesat"
+
+    def __init__(self, docker_container_id: str = None, dir: str = None):
+        self.initialize_solver(docker_container_id=docker_container_id, dir=dir)
+
+    def solve_call(self, cnf_file):
+        return [self.binary_path, "-no-lib-math", cnf_file]
+
+    def get_conflicts(self, stdout):
+        """Extract conflicts from output, looking like:
+c ===============================================================================
+c simplification        : 4 elim.vars,  2 subsumed
+c strengthening         : 3 lits, 0 all-candidates, 0 all-used
+c restarts              : 12
+c conflicts             : 5473           (23513 /sec)
+c decisions             : 16558          (0.00 % random) (71137 /sec)
+c propagations          : 590045         (2534971 /sec)
+c conflict literals     : 96779          (22.89 % deleted)
+        """
+        conflicts = -1
+        for line in stdout.splitlines():
+            if line.startswith("c conflicts             : "):
+                conflicts = int(line.split()[3])
+        # return the last hit for this pattern
+        return conflicts
+
+
+def run_assess_environment(args):
+
+    log.debug("Run assessing environment with args %r", args)
+
+    max_benchmarks = args.get("max_benchmarks", -1)
+    output_file = args.get("output")
+    return_code = 0
+
+    if max_benchmarks != -1:
+        log.info("Run on the first %d benchmarks", max_benchmarks)
+
+    """
+    Check CaDiCaL-watchsat-lto, Kissat-bulky and MergeSat on the first formulas that took 3600 seconds
+    in the competition together (data from main track result columns)
+
+    hash	benchmark	verified-result	CaDiCaL-watchsat-lto	MergeSat 4.0-rc-rc3	kissat-sc2022-bulky	SUM	TOTAL_SUM
+    d87714e099c66f0034fb95727fa47ccc	Wallace_Bits_Fast_2.cnf.cnf.xz	sat	1.14809	2.81604	2.20632	6.17045	11.19281
+    0616ca6b1e0ae639d12e19ed310963a9	satcoin-genesis-SAT-4.cnf.xz	sat	1.3179	22.7107	19.8417	43.8703	55.06311
+    6d815089fb4095208754622b4c44a8f7	Carry_Bits_Fast_12.cnf.cnf.xz	sat	3.76298	40.6661	3.02327	47.45235	102.51546
+    00a62eb89afbf27e1addf8f5c437da9b	ortholatin-7.cnf.xz	sat	3.43583	34.1585	16.1187	53.71303	156.22849
+    49f5d904bb2e762219287d33f5621971	ITC2021_Late_1.xml.cnf.xz	sat	15.2517	58.8198	25.6195	99.691	255.91949
+    5099718e4b5b8fe2ba7f8b919fdfde2d	satcoin-genesis-SAT-5.cnf.xz	sat	1.2681	23.5836	85.5058	110.3575	366.27699
+    0dc468413b65339fad7e4f981bf2fb1e	reconf20_61_myciel4_2.cnf.xz	unsat	32.1735	58.0136	23.1146	113.3017	479.57869
+    8bb5819a23a8f1dff851d608bec008ca	ITC2021_Late_6.xml.cnf.xz	sat	39.3672	79.8123	15.9397	135.1192	614.69789
+    807133f4461a11e39a390dfcf67a4fc6	summle_X11113_steps8_I1-2-2-4-4-8-25-100.cnf.xz	sat	57.1315	39.1326	66.1284	162.3925	777.09039
+    bb80971144a5423532aea9424dade891	div-mitern174.cnf.xz	unsat	37.1634	105.256	38.895	181.3144	958.40479
+    436d00b6d41912e800e9855d08c75139	manol-pipe-f7nidw.cnf.xz	unsat	38.0336	86.7552	60.7459	185.5347	1143.93949
+    920bbe559da4ea37fd636605316a791c	SCPC-500-19.cnf.xz	unsat	34.0026	137.37	36.1053	207.4779	1351.41739
+    3176c9024f756e99dbee852e5c0aa578	Break_triple_12_30.xml.cnf.xz	sat	113.311	92.2417	11.9348	217.4875	1568.90489
+    d3c07914f3ebb42906b986aa431243af	summle_X8646_steps8_I1-2-2-4-4-8-25-100.cnf.xz	sat	131.17	30.796	59.9684	221.9344	1790.83929
+    608941b989227d93c62b3a9b4280011b	summle_X8639_steps8_I1-2-2-4-4-8-25-100.cnf.xz	sat	146.001	40.8328	49.9949	236.8287	2027.66799
+    e28cf003c086c99f3a3d9a90aebf8ed1	intel046_Iter124.cnf.xz	sat	79.094	125.537	33.7758	238.4068	2266.07479
+    fa88b447f6b41b04686085480678affe	UNSAT_H_instances_childsnack_p12.hddl_1.cnf.xz	unsat	94.0074	81.4267	64.8844	240.3185	2506.39329
+    c0df94532b1ca8a705d3af05378f377d	SCPC-500-20.cnf.xz	unsat	44.3795	151.448	44.913	240.7405	2747.13379
+    5d357f1e4b5abc96c90d305f629edd5c	ps_200_323_70.cnf.xz	unsat	111.817	102.158	34.5328	248.5078	2995.64159
+    3b97191d94abf3a5e97d6359d886d9df	summle_X111121_steps7_I1-2-2-4-4-8-25-100.cnf.xz	sat	140.091	66.0687	42.8702	249.0299	3244.67149
+    1ebab99edff4c0470c8aa753bb9d3353	summle_X8637_steps8_I1-2-2-4-4-8-25-100.cnf.xz	sat	120.212	107.106	26.6837	254.0017	3498.67319
+    """
+
+    assess_report = dict()
+    assess_report["hostinfo"] = get_host_info()
+
+    benchmarks = [
+        "d87714e099c66f0034fb95727fa47ccc",
+        "0616ca6b1e0ae639d12e19ed310963a9",
+        "6d815089fb4095208754622b4c44a8f7",
+        "00a62eb89afbf27e1addf8f5c437da9b",
+        "49f5d904bb2e762219287d33f5621971",
+        "5099718e4b5b8fe2ba7f8b919fdfde2d",
+        "0dc468413b65339fad7e4f981bf2fb1e",
+        "8bb5819a23a8f1dff851d608bec008ca",
+        "807133f4461a11e39a390dfcf67a4fc6",
+        "bb80971144a5423532aea9424dade891",
+        "436d00b6d41912e800e9855d08c75139",
+        "920bbe559da4ea37fd636605316a791c",
+        "3176c9024f756e99dbee852e5c0aa578",
+        "d3c07914f3ebb42906b986aa431243af",
+        "608941b989227d93c62b3a9b4280011b",
+        "e28cf003c086c99f3a3d9a90aebf8ed1",
+        "fa88b447f6b41b04686085480678affe",
+        "c0df94532b1ca8a705d3af05378f377d",
+        "5d357f1e4b5abc96c90d305f629edd5c",
+        "3b97191d94abf3a5e97d6359d886d9df",
+        "1ebab99edff4c0470c8aa753bb9d3353",
+    ]
+
+    # TODO: go to working directory
+
+    assess_container_id = None
+    if not args.get("no_docker", True):
+        assess_artifacts_dir = "assess_artifacts"
+        specsat_dir = os.path.dirname(os.path.abspath(__file__))
+        dockerfile_dir = os.path.join(specsat_dir, assess_artifacts_dir)
+        log.info("Building assess docker container from directory %s", dockerfile_dir)
+        assess_container_id = build_docker_container(dockerfile_dir=dockerfile_dir)
+
+    solvers = dict()
+    if not args.get("no_cadical", False):
+        solvers["cadical-watchsat-flto"] = cadical_watchsat_lto_solver(
+            docker_container_id=assess_container_id
+        )
+    if not args.get("no_kissat", False):
+        solvers["kissat_bulky"] = kissat_bulky_solver(
+            docker_container_id=assess_container_id
+        )
+    if not args.get("no_mergesat", False):
+        solvers["mergesat"] = mergesat(docker_container_id=assess_container_id)
+        log.info("Work with solvers: %r", solvers)
+
+    dir = tempfile.TemporaryDirectory()
+
+    assess_report["solvers"] = {}
+    for solver_name, solver in solvers.items():
+        md5_sum = get_md5_checksum(solver.binary_path)
+        assess_report["solvers"][solver_name] = {
+            "md5sum": md5_sum,
+            "git_describe": solver.git_describe,
+        }
+
+    assess_report["benchmarks"] = {}
+    assessed_benchmarks = 0
+    try:
+        for benchmark in benchmarks:
+
+            assessed_benchmarks += 1
+            if max_benchmarks != -1 and assessed_benchmarks > max_benchmarks:
+                log.info("Stopping assessment, as we reached specified maximum")
+                break
+
+            with pushd(dir.name):
+                download_hashed_file(benchmark)
+                zipped_cnf_files = glob.glob("*.cnf.xz")
+                log.debug("zipped cnf: %r", zipped_cnf_files)
+                assert len(zipped_cnf_files) == 1, "only one file should be downloaded"
+                zipped_cnf = os.path.realpath(zipped_cnf_files[0])
+
+                assess_report["benchmarks"][benchmark] = {
+                    "name": os.path.basename(zipped_cnf)
+                }
+
+                log.info(
+                    "On benchmark %s, working with solvers: %r", benchmark, solvers
+                )
+                for solver_name, solver in solvers.items():
+                    log.info("Run solver %s on benchmark %s", solver_name, zipped_cnf)
+                    full_call = solver.solve_call(zipped_cnf)
+                    log.debug("Execute solver call: %r", full_call)
+
+                    data = {}
+                    try:
+                        process = subprocess.run(
+                            full_call,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            preexec_fn=set_5m_timeout,
+                        )
+
+                        data, stdout = measure_call(
+                            full_call,
+                            subprocess.PIPE,
+                            container_id=None,
+                            expected_code=None,
+                            extra_env=None,
+                        )
+
+                        stdout = process.stdout.decode()
+                        log.debug(
+                            "Call output %s with return code %d",
+                            stdout,
+                            data["status_code"],
+                        )
+                        data["conflicts"] = solver.get_conflicts(stdout)
+                    except Exception as e:
+                        log.debug("Failed solver execution with exception %r", e)
+                        log.error(
+                            "Failed to execute solver %s on benchmark %s",
+                            solver_name,
+                            zipped_cnf,
+                        )
+                        return_code = 1
+                    log.info("Solver '%s' solver '%s' with data %r", solver_name, zipped_cnf, data)
+                    assess_report["benchmarks"][benchmark][solver_name] = data
+
+                # Cleanup this iteration
+                os.remove(zipped_cnf)
+
+    except Exception as e:
+        log.exception("Stopped call with exception: %r", e)
+        return_code = 1
+    log.info("Full report: %s", json.dumps(assess_report, indent=2))
+
+    if output_file:
+        log.info("Writing assessment report to file: %s", output_file)
+        with open(output_file, "w") as f:
+            json.dump(assess_report, f, indent=4, sort_keys=True)
+
+    return return_code
+
+
+def run_specsat(args):
+    log.info("Run run_specsat, with args %r", args)
 
     if args.get("docker_host_network"):
         log.debug("Using host network for docker")
