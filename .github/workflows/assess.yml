@@ -23,6 +23,10 @@ jobs:
       run: |
           ./SpecSAT.py assess -u -o assess.json
 
+    - name: Show results
+      run: |
+          cat assess.json
+
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3
       with:
